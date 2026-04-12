@@ -40,7 +40,10 @@ def get_garmin_data():
         print("  ✓ Ingelogd via opgeslagen tokens")
     except Exception:
         print("  → Tokens verlopen of niet aanwezig, opnieuw inloggen...")
-        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+        import sys
+        is_interactive = sys.stdin.isatty()
+        prompt_mfa = (lambda: input("  Voer je Garmin MFA-code in: ")) if is_interactive else None
+        client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD, prompt_mfa=prompt_mfa)
         client.login()
         client.garth.dump(TOKEN_STORE)
         print("  ✓ Nieuw ingelogd en tokens opgeslagen")

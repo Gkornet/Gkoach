@@ -40,6 +40,15 @@ jobs:
           restore-keys: |
             garmin-tokens-
 
+      - name: Garmin tokens herstellen vanuit Secret
+        run: |
+          if [ -n "$GARMIN_TOKENS" ] && [ ! -f backend/.garmin_tokens.json ]; then
+            echo "$GARMIN_TOKENS" > backend/.garmin_tokens.json
+            echo "  ✓ Tokens hersteld vanuit Secret"
+          fi
+        env:
+          GARMIN_TOKENS: ${{ secrets.GARMIN_TOKENS }}
+
       - name: Garmin sync uitvoeren
         env:
           GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
