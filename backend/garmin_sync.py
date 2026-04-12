@@ -56,6 +56,7 @@ def get_garmin_data():
         client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD, prompt_mfa=prompt_mfa)
         client.login()
         try:
+            client.prompt_mfa = None  # lambda is niet picklable
             with open(token_file, "wb") as f:
                 pickle.dump(client, f)
             print("  ✓ Nieuw ingelogd en tokens opgeslagen")
@@ -191,7 +192,7 @@ def write_to_sheet(garmin_data):
         row = dict(zip(HEADERS, existing))
         row.update({k: v for k, v in garmin_data.items()})
         row["date"] = TODAY
-        ws.update(f"A{row_idx}", [list(row.values())])
+        ws.update([list(row.values())], f"A{row_idx}")
     else:
         row = {h: "" for h in HEADERS}
         row.update(garmin_data)
