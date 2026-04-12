@@ -158,6 +158,76 @@ function getDailyPlan(last, entries) {
   ];
 }
 
+// ── Task detail content ───────────────────────────────────────────────────────
+const TASK_DETAILS = {
+  morning: {
+    title: "Ochtendmeting",
+    steps: [
+      { icon: "⏰", text: "Meet direct na het wakker worden — nog voor koffie of beweging." },
+      { icon: "🧘", text: "Ga rustig zitten of liggen. Adem 3× diep in en uit." },
+      { icon: "⌚", text: "Open de Garmin Connect app → je ziet de HRV status en body battery van de afgelopen nacht." },
+      { icon: "📊", text: "Noteer of de waarden groen/normaal zijn. Groen = goed herstel." },
+    ],
+    tip: "HRV (hartslagvariabiliteit) is je beste maatstaf voor herstel. Hoe hoger, hoe beter je lichaam klaar is voor inspanning.",
+  },
+  breathing: {
+    title: "Box breathing",
+    steps: [
+      { icon: "🪑", text: "Ga rechtop zitten. Voeten plat op de grond, handen op de knieën." },
+      { icon: "4️⃣", text: "INADEMEN — tel langzaam tot 4 (neus)." },
+      { icon: "⏸", text: "VASTHOUDEN — tel tot 4. Niet inademen, niet uitademen." },
+      { icon: "4️⃣", text: "UITADEMEN — tel langzaam tot 4 (mond)." },
+      { icon: "⏸", text: "VASTHOUDEN — tel tot 4. Dan herhaal." },
+      { icon: "🔄", text: "Herhaal 16–20 rondes (±4 minuten). Bouw op naar 8–10 minuten." },
+    ],
+    tip: "Box breathing activeert het parasympathisch zenuwstelsel — dit verlaagt cortisol, verbetert focus en verhoogt je HRV over tijd. Ideaal in de ochtend of voor een training.",
+  },
+  training: {
+    title: "Training",
+    steps: [
+      { icon: "🌡", text: "Warming-up: 10 min rustig inlopen of dynamisch stretchen." },
+      { icon: "🏃", text: "Volg het trainingsplan op basis van je readiness. Zone 2 = je kunt nog praten." },
+      { icon: "💓", text: "Zone 2 HR = ±60–70% van je max hartslag. Voor jou ca. 130–145 bpm." },
+      { icon: "❄", text: "Cool-down: 5–10 min rustig uitlopen + statisch stretchen." },
+      { icon: "📱", text: "Sla de activiteit op in Garmin — wordt automatisch gesynchroniseerd." },
+    ],
+    tip: "Consistentie beats intensiteit. 80% van je trainingen hoort in Zone 2 te zitten voor optimale aerobe basis en HRV verbetering.",
+  },
+  steps: {
+    title: "Dagelijks stappendoel",
+    steps: [
+      { icon: "🚶", text: "10.000 stappen per dag is de basislijn voor cardiovasculaire gezondheid." },
+      { icon: "🕐", text: "Stap na elke maaltijd 10 minuten — helpt bloedsuiker te reguleren." },
+      { icon: "🪜", text: "Neem de trap, parkeer wat verder weg, stap tussendoor even buiten." },
+      { icon: "📱", text: "Garmin telt automatisch — je ziet de voortgang live in de app." },
+    ],
+    tip: "Stappen tellen mee voor je dagelijkse beweging maar zijn iets anders dan een training. Beide zijn belangrijk.",
+  },
+  checkin: {
+    title: "Dagelijkse check-in",
+    steps: [
+      { icon: "⚖", text: "Weeg jezelf — bij voorkeur 's ochtends na het toilet, voor het eten." },
+      { icon: "⚡", text: "Beoordeel je energieniveau: 1–10. Eerlijk en intuïtief." },
+      { icon: "🫀", text: "Bloeddruk meten als je een manchet hebt — ideaal <120/80 mmHg." },
+      { icon: "📝", text: "Noteer iets opmerkelijks: stress, voeding, pijn, gevoel." },
+      { icon: "💾", text: "Sla op — data wordt naar Google Sheets geschreven." },
+    ],
+    tip: "Dagelijkse check-ins bouwen over weken een patroon op. De AI-coach gebruikt deze data voor persoonlijk advies.",
+  },
+  sleep: {
+    title: "Slaapvoorbereiding",
+    steps: [
+      { icon: "📵", text: "22:00 — schermen uit of op nachtmodus. Blauw licht onderdrukt melatonine." },
+      { icon: "🌡", text: "Zet de slaapkamer koel: 16–19°C is optimaal voor diepe slaap." },
+      { icon: "📖", text: "10 min lezen of journalen — vermindert piekergedachten." },
+      { icon: "🌬", text: "4-7-8 ademhaling: in 4, vasthouden 7, uit 8. Doe 4 ronden." },
+      { icon: "⌚", text: "Laat je Garmin aan — de sleep tracking start automatisch." },
+      { icon: "🎯", text: "Doel: 7,5 uur in bed. Garmin registreert diepe slaap, REM en HRV." },
+    ],
+    tip: "De uren voor middernacht tellen het zwaarst voor herstel. Eerder slapen verhoogt je diepe slaappercentage significant.",
+  },
+};
+
 // ── Coaching ──────────────────────────────────────────────────────────────────
 async function fetchCoaching(entries, question) {
   const recent = entries.slice(-7);
@@ -281,6 +351,7 @@ export default function App() {
   const [saveMsg,   setSaveMsg]   = useState("");
   const [sheetMode, setSheetMode] = useState(!!SHEET_ID);
   const [planDone,  setPlanDone]  = useState({});
+  const [taskDetail, setTaskDetail] = useState(null); // task object or null
 
   const loadData = useCallback(async () => {
     if (!sheetMode) {
@@ -384,8 +455,65 @@ export default function App() {
     </div>
   );
 
+  // ── Task detail modal ─────────────────────────────────────────────────────
+  const detail = taskDetail ? (TASK_DETAILS[taskDetail.id] || { title: taskDetail.label, steps: [], tip: null }) : null;
+  const TaskModal = detail && (
+    <div onClick={() => setTaskDetail(null)} style={{
+      position: "fixed", inset: 0, zIndex: 999,
+      background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center"
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: C.card, borderRadius: "20px 20px 0 0",
+        width: "100%", maxWidth: 640, maxHeight: "80vh",
+        overflowY: "auto", padding: "0 0 40px"
+      }}>
+        {/* Handle */}
+        <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 0" }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: C.fill }} />
+        </div>
+        {/* Header */}
+        <div style={{ padding: "16px 20px 20px", borderBottom: `1px solid ${C.separator}`, display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: taskDetail.color + "18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>
+            {taskDetail.icon}
+          </div>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 700 }}>{detail.title}</div>
+            <div style={{ fontSize: 13, color: C.text3, marginTop: 2 }}>{taskDetail.sub}</div>
+          </div>
+        </div>
+        {/* Steps */}
+        <div style={{ padding: "20px 20px 0" }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>Hoe doe je het</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {detail.steps.map((s, i) => (
+              <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: C.fill, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{s.icon}</div>
+                <div style={{ fontSize: 15, color: C.text, lineHeight: 1.5, paddingTop: 7 }}>{s.text}</div>
+              </div>
+            ))}
+          </div>
+          {detail.tip && (
+            <div style={{ marginTop: 20, background: taskDetail.color + "12", borderRadius: 12, padding: "12px 16px" }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: taskDetail.color, marginBottom: 4 }}>WAAROM DIT WERKT</div>
+              <div style={{ fontSize: 14, color: C.text, lineHeight: 1.5 }}>{detail.tip}</div>
+            </div>
+          )}
+          {/* Mark done button */}
+          {!taskDetail.auto && (
+            <button onClick={() => { setPlanDone(p => ({ ...p, [taskDetail.id]: !planDone[taskDetail.id] })); setTaskDetail(null); }}
+              style={{ marginTop: 20, width: "100%", background: taskDetail.done || planDone[taskDetail.id] ? C.fill : taskDetail.color, color: taskDetail.done || planDone[taskDetail.id] ? C.text3 : "#fff", border: "none", borderRadius: 14, padding: "14px", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
+              {taskDetail.done || planDone[taskDetail.id] ? "Markeer als niet gedaan" : "Markeer als gedaan ✓"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div style={{ fontFamily: "-apple-system, 'SF Pro Display', system-ui, sans-serif", background: C.bg, minHeight: "100vh", color: C.text }}>
+      {TaskModal}
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
         input, select, textarea {
@@ -475,11 +603,11 @@ export default function App() {
               {plan.map((task, i) => {
                 const done = task.done || !!planDone[task.id];
                 return (
-                  <div key={task.id} onClick={() => !task.auto && setPlanDone(p => ({ ...p, [task.id]: !p[task.id] }))}
+                  <div key={task.id} onClick={() => setTaskDetail({ ...task, done })}
                     style={{
                       background: C.card, borderRadius: i === 0 ? "14px 14px 4px 4px" : i === plan.length-1 ? "4px 4px 14px 14px" : 4,
                       padding: "14px 16px", display: "flex", alignItems: "center", gap: 14,
-                      cursor: task.auto ? "default" : "pointer", opacity: done ? 0.6 : 1,
+                      cursor: "pointer", opacity: done ? 0.6 : 1,
                       transition: "opacity 0.2s"
                     }}>
                     <div style={{
@@ -493,7 +621,10 @@ export default function App() {
                       <div style={{ fontSize: 15, fontWeight: 600, color: done ? C.text3 : C.text, textDecoration: done ? "line-through" : "none" }}>{task.label}</div>
                       <div style={{ fontSize: 13, color: C.text3, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{task.sub}</div>
                     </div>
-                    <div style={{ fontSize: 11, color: task.color, fontWeight: 600, flexShrink: 0, background: task.color + "15", padding: "3px 8px", borderRadius: 20 }}>{task.cat}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                      <div style={{ fontSize: 11, color: task.color, fontWeight: 600, background: task.color + "15", padding: "3px 8px", borderRadius: 20 }}>{task.cat}</div>
+                      <div style={{ fontSize: 16, color: C.text3 }}>›</div>
+                    </div>
                   </div>
                 );
               })}
