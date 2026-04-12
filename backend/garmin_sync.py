@@ -34,7 +34,11 @@ def get_garmin_data():
     print(f"[{TODAY}] Verbinden met Garmin Connect...")
 
     # Token-gebaseerd inloggen (voorkomt dat Garmin account geblokkeerd raakt)
-    import sys, pickle
+    import sys
+    try:
+        import dill as pickle
+    except ImportError:
+        import pickle
     client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
 
     # Probeer opgeslagen tokens te laden
