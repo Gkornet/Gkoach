@@ -215,7 +215,7 @@ HEADERS = [
     "trained", "train_type", "train_min", "train_dist",
     "avg_hr", "max_hr", "avg_pace", "cadence",
     "ground_contact", "vertical_osc", "vertical_ratio", "stride_length", "training_effect", "vo2max",
-    "energy", "mental_unrest", "breathing", "breathing_type", "notes"
+    "energy", "mental_unrest", "breathing", "breathing_type", "notes", "sleep_prep"
 ]
 
 

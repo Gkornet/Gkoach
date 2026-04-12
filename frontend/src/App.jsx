@@ -6,7 +6,7 @@ const SA_EMAIL   = import.meta.env.VITE_GOOGLE_SERVICE_ACCOUNT_EMAIL;
 const SA_KEY     = import.meta.env.VITE_GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
 const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_API_KEY;
 const TAB        = "coach_data";
-const RANGE      = `${TAB}!A:AG`;
+const RANGE      = `${TAB}!A:AH`;
 
 async function getJWT() {
   const header  = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
@@ -65,8 +65,11 @@ const HEADERS = [
   "trained","train_type","train_min","train_dist",
   "avg_hr","max_hr","avg_pace","cadence",
   "ground_contact","vertical_osc","vertical_ratio","stride_length","training_effect","vo2max",
-  "energy","mental_unrest","breathing","breathing_type","notes"
+  "energy","mental_unrest","breathing","breathing_type","notes","sleep_prep"
 ];
+
+// Plan item → entry field mapping (for auto-save)
+const PLAN_FIELD = { breathing: "breathing", sleep: "sleep_prep" };
 
 const today     = () => new Date().toISOString().slice(0, 10);
 const fmt       = (d) => new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
@@ -144,6 +147,7 @@ function getDailyPlan(last, entries) {
   const SLEEP_GOAL = 7.5;
   const sleepActual = last?.sleep_h ? +last.sleep_h : null;
   const sleepDone = sleepActual !== null && sleepActual >= SLEEP_GOAL;
+  const sleepPrepped = isTrue(last?.sleep_prep);
   const sleepSub = sleepActual !== null
     ? `Gisteren: ${sleepActual}u slaap · doel ${SLEEP_GOAL}u · schermen weg 22:00`
     : `Doel ${SLEEP_GOAL}u slaap · schermen weg 22:00`;
@@ -154,7 +158,7 @@ function getDailyPlan(last, entries) {
     { ...trainTask, id: "training", done: trainDone },
     { id: "steps", cat: "Beweging", icon: "👟", label: "Dagelijks stappendoel", sub: `${last?.steps ? Math.round(+last.steps).toLocaleString("nl") : "—"} / 10.000 vandaag`, color: C.green, auto: true, done: +last?.steps >= 10000 },
     { id: "checkin", cat: "Check-in", icon: "📋", label: "Dagelijkse check-in", sub: "Energie, gewicht, opmerkingen invullen", color: C.blue, done: !!(last?.date === today() && last?.energy) },
-    { id: "sleep", cat: "Avond", icon: "🌙", label: "Slaapvoorbereiding", sub: sleepSub, color: C.indigo, done: sleepDone },
+    { id: "sleep", cat: "Avond", icon: "🌙", label: "Slaapvoorbereiding", sub: sleepSub, color: C.indigo, done: sleepDone || sleepPrepped },
   ];
 }
 
@@ -413,6 +417,28 @@ export default function App() {
     setTimeout(() => setSaveMsg(""), 2500);
   };
 
+  // Auto-save a single field for the current date (used by plan item toggles)
+  const autoSaveField = async (key, value) => {
+    const updated = { ...entry, [key]: value };
+    setEntry(updated);
+    const row = HEADERS.map(h => updated[h] ?? "");
+    try {
+      if (sheetMode) {
+        const res   = await sheetsGet();
+        const rows  = res.values || [];
+        const dates = rows.slice(1).map(r => r[0]);
+        const idx   = dates.indexOf(updated.date);
+        if (idx >= 0) await sheetsUpdate(idx + 2, row);
+        else await sheetsAppend(row);
+      } else {
+        const raw = JSON.parse(localStorage.getItem("coach_v2") || "{}");
+        raw[updated.date] = updated;
+        localStorage.setItem("coach_v2", JSON.stringify(raw));
+      }
+      await loadData();
+    } catch (e) { console.error("autoSave error:", e); }
+  };
+
   const runCoach = async () => {
     setCoachLoad(true); setCoaching("");
     try {
@@ -503,19 +529,30 @@ export default function App() {
           {/* Mark done / undone buttons */}
           {!taskDetail.auto && (() => {
             const isDone = taskDetail.done || !!planDone[taskDetail.id];
+            const field  = PLAN_FIELD[taskDetail.id]; // mapped Sheets field, or undefined
+
+            const markDone = async (val) => {
+              if (field) {
+                await autoSaveField(field, val ? "true" : "false");
+              } else {
+                setPlanDone(p => ({ ...p, [taskDetail.id]: val }));
+              }
+              setTaskDetail(null);
+            };
+
             return isDone ? (
               <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.green + "15", borderRadius: 12, padding: "12px 16px" }}>
                   <span style={{ fontSize: 18 }}>✅</span>
-                  <span style={{ fontSize: 15, color: C.green, fontWeight: 600 }}>Gedaan vandaag</span>
+                  <span style={{ fontSize: 15, color: C.green, fontWeight: 600 }}>Gedaan vandaag · {field ? "Opgeslagen in Sheets" : "Lokaal"}</span>
                 </div>
-                <button onClick={() => { setPlanDone(p => ({ ...p, [taskDetail.id]: false })); setTaskDetail(null); }}
+                <button onClick={() => markDone(false)}
                   style={{ width: "100%", background: C.fill, color: C.text3, border: "none", borderRadius: 14, padding: "14px", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
                   Toch niet gedaan
                 </button>
               </div>
             ) : (
-              <button onClick={() => { setPlanDone(p => ({ ...p, [taskDetail.id]: true })); setTaskDetail(null); }}
+              <button onClick={() => markDone(true)}
                 style={{ marginTop: 20, width: "100%", background: taskDetail.color, color: "#fff", border: "none", borderRadius: 14, padding: "14px", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
                 Markeer als gedaan ✓
               </button>
