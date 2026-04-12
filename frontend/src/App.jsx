@@ -474,13 +474,14 @@ export default function App() {
         </div>
         {/* Header */}
         <div style={{ padding: "16px 20px 20px", borderBottom: `1px solid ${C.separator}`, display: "flex", alignItems: "center", gap: 14 }}>
-          <div style={{ width: 48, height: 48, borderRadius: 14, background: taskDetail.color + "18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 14, background: taskDetail.color + "18", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
             {taskDetail.icon}
           </div>
-          <div>
+          <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 700 }}>{detail.title}</div>
             <div style={{ fontSize: 13, color: C.text3, marginTop: 2 }}>{taskDetail.sub}</div>
           </div>
+          <button onClick={() => setTaskDetail(null)} style={{ width: 32, height: 32, borderRadius: 16, background: C.fill, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: C.text3, flexShrink: 0 }}>✕</button>
         </div>
         {/* Steps */}
         <div style={{ padding: "20px 20px 0" }}>
@@ -499,13 +500,27 @@ export default function App() {
               <div style={{ fontSize: 14, color: C.text, lineHeight: 1.5 }}>{detail.tip}</div>
             </div>
           )}
-          {/* Mark done button */}
-          {!taskDetail.auto && (
-            <button onClick={() => { setPlanDone(p => ({ ...p, [taskDetail.id]: !planDone[taskDetail.id] })); setTaskDetail(null); }}
-              style={{ marginTop: 20, width: "100%", background: taskDetail.done || planDone[taskDetail.id] ? C.fill : taskDetail.color, color: taskDetail.done || planDone[taskDetail.id] ? C.text3 : "#fff", border: "none", borderRadius: 14, padding: "14px", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
-              {taskDetail.done || planDone[taskDetail.id] ? "Markeer als niet gedaan" : "Markeer als gedaan ✓"}
-            </button>
-          )}
+          {/* Mark done / undone buttons */}
+          {!taskDetail.auto && (() => {
+            const isDone = taskDetail.done || !!planDone[taskDetail.id];
+            return isDone ? (
+              <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.green + "15", borderRadius: 12, padding: "12px 16px" }}>
+                  <span style={{ fontSize: 18 }}>✅</span>
+                  <span style={{ fontSize: 15, color: C.green, fontWeight: 600 }}>Gedaan vandaag</span>
+                </div>
+                <button onClick={() => { setPlanDone(p => ({ ...p, [taskDetail.id]: false })); setTaskDetail(null); }}
+                  style={{ width: "100%", background: C.fill, color: C.text3, border: "none", borderRadius: 14, padding: "14px", fontSize: 15, fontWeight: 600, cursor: "pointer" }}>
+                  Toch niet gedaan
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => { setPlanDone(p => ({ ...p, [taskDetail.id]: true })); setTaskDetail(null); }}
+                style={{ marginTop: 20, width: "100%", background: taskDetail.color, color: "#fff", border: "none", borderRadius: 14, padding: "14px", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
+                Markeer als gedaan ✓
+              </button>
+            );
+          })()}
         </div>
       </div>
     </div>
