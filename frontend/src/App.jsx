@@ -113,21 +113,48 @@ function getDailyPlan(last, entries) {
   const needsRest  = trainedRecently >= 2 || (readiness !== null && readiness < 45);
   const canIntense = readiness !== null && readiness >= 70;
 
-  const trainTask = needsRest
-    ? { icon: "🧘", label: "Hersteldag", sub: "Lichte wandeling of rust — HRV vraagt herstel", color: C.teal, cat: "Herstel" }
-    : canIntense
-    ? race1Days > 42
+  // Training: als Garmin al een activiteit heeft, toon die — anders geef advies
+  const garminTrained = isTrue(last?.trained);
+  const typeLabel = last?.train_type
+    ? last.train_type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+    : "";
+  const isRun = (last?.train_type || "").toLowerCase().includes("run");
+  const trainDone = garminTrained;
+
+  let trainTask;
+  if (garminTrained) {
+    // Garmin heeft vandaag al een activiteit gesynct — toon die
+    const parts = [];
+    if (last?.train_min) parts.push(`${last.train_min} min`);
+    if (last?.train_dist) parts.push(`${last.train_dist} km`);
+    if (last?.avg_hr) parts.push(`gem. ${last.avg_hr} bpm`);
+    if (isRun && last?.avg_pace) parts.push(`${last.avg_pace}/km`);
+    trainTask = { icon: isRun ? "🏃" : "💪", label: typeLabel || "Training", sub: parts.join(" · ") || "Gesynchroniseerd vanuit Garmin", color: C.orange, cat: "Training" };
+  } else if (needsRest) {
+    trainTask = { icon: "🧘", label: "Hersteldag", sub: "Lichte wandeling of rust — HRV vraagt herstel", color: C.teal, cat: "Herstel" };
+  } else if (canIntense) {
+    trainTask = race1Days > 42
       ? { icon: "🏃", label: "Zone 2 duurloop", sub: `45–55 min · HR ${last?.rhr ? Math.round(+last.rhr*1.6) : 130}–${last?.rhr ? Math.round(+last.rhr*1.75) : 145} bpm`, color: C.orange, cat: "Training" }
-      : { icon: "🏃", label: "Tempolopen", sub: `30 min · 5×3 min @ racetempo + warming-up`, color: C.orange, cat: "Training" }
-    : { icon: "🚶", label: "Actief herstel", sub: "30 min wandeling of mobiliteitswerk", color: C.green, cat: "Training" };
+      : { icon: "🏃", label: "Tempolopen", sub: `30 min · 5×3 min @ racetempo + warming-up`, color: C.orange, cat: "Training" };
+  } else {
+    trainTask = { icon: "🚶", label: "Actief herstel", sub: "30 min wandeling of mobiliteitswerk", color: C.green, cat: "Training" };
+  }
+
+  // Slaap: toon gisteravond's werkelijke slaap vs doel
+  const SLEEP_GOAL = 7.5;
+  const sleepActual = last?.sleep_h ? +last.sleep_h : null;
+  const sleepDone = sleepActual !== null && sleepActual >= SLEEP_GOAL;
+  const sleepSub = sleepActual !== null
+    ? `Gisteren: ${sleepActual}u slaap · doel ${SLEEP_GOAL}u · schermen weg 22:00`
+    : `Doel ${SLEEP_GOAL}u slaap · schermen weg 22:00`;
 
   return [
     { id: "morning", cat: "Ochtend", icon: "🌅", label: "Ochtendmeting", sub: "HRV & body battery ophalen via Garmin", color: C.blue, auto: true, done: !!last?.hrv },
     { id: "breathing", cat: "Mindfulness", icon: "🫁", label: "Box breathing", sub: "4×4 min · 4 tellen in-hold-uit-hold", color: C.purple, done: isTrue(last?.breathing) },
-    { ...trainTask, id: "training", done: isTrue(last?.trained) },
+    { ...trainTask, id: "training", done: trainDone },
     { id: "steps", cat: "Beweging", icon: "👟", label: "Dagelijks stappendoel", sub: `${last?.steps ? Math.round(+last.steps).toLocaleString("nl") : "—"} / 10.000 vandaag`, color: C.green, auto: true, done: +last?.steps >= 10000 },
     { id: "checkin", cat: "Check-in", icon: "📋", label: "Dagelijkse check-in", sub: "Energie, gewicht, opmerkingen invullen", color: C.blue, done: !!(last?.date === today() && last?.energy) },
-    { id: "sleep", cat: "Avond", icon: "🌙", label: "Slaapvoorbereiding", sub: "Schermen weg 22:00 · doel 7.5u slaap", color: C.indigo, done: false },
+    { id: "sleep", cat: "Avond", icon: "🌙", label: "Slaapvoorbereiding", sub: sleepSub, color: C.indigo, done: sleepDone },
   ];
 }
 
