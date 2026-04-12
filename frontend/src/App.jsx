@@ -63,6 +63,8 @@ const HEADERS = [
   "sleep_h","sleep_q","sleep_deep","sleep_rem",
   "hrv","rhr","stress","body_battery","steps",
   "trained","train_type","train_min","train_dist",
+  "avg_hr","max_hr","avg_pace","cadence",
+  "ground_contact","vertical_osc","vertical_ratio","stride_length","training_effect","vo2max",
   "energy","mental_unrest","breathing","breathing_type","notes"
 ];
 
@@ -84,6 +86,7 @@ CONTEXT/VRAAG: ${question || "Geef mijn dagelijkse check-in analyse."}
 
 DOELEN: hogere HRV, optimale slaap, energiek wakker, betere gezondheid, innerlijke rust.
 WEDSTRIJDEN: 10km 5 juli 2026 Noordwijk · Gym-race 4 oktober 2026 Utrecht.
+HARDLOOP METRICS (indien aanwezig): avg_pace (min:sec/km), cadence (stappen/min, ideaal ~180), ground_contact (ms, lager = beter, ideaal <250ms), vertical_osc (cm, lager = beter, ideaal <9cm), vertical_ratio (%, lager = beter, ideaal <8%), stride_length (m). Analyseer loopefficiëntie als deze data beschikbaar is.
 
 Antwoord in EXACT deze structuur:
 ### Hoe sta je ervoor

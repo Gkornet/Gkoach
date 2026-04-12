@@ -45,8 +45,11 @@ def get_garmin_data():
         prompt_mfa = (lambda: input("  Voer je Garmin MFA-code in: ")) if is_interactive else None
         client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD, prompt_mfa=prompt_mfa)
         client.login()
-        client.garth.dump(TOKEN_STORE)
-        print("  ✓ Nieuw ingelogd en tokens opgeslagen")
+        try:
+            client.garth.dump(TOKEN_STORE)
+            print("  ✓ Nieuw ingelogd en tokens opgeslagen")
+        except Exception:
+            print("  ⚠ Tokens konden niet worden opgeslagen (niet kritiek)")
 
     data = {}
 
@@ -89,7 +92,7 @@ def get_garmin_data():
     except Exception as e:
         print(f"  ✗ Stappen: {e}")
 
-    # Training van gisteren (activiteiten)
+    # Training + hardloop dynamics
     try:
         yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
         activities = client.get_activities_by_date(yesterday, TODAY)
@@ -99,12 +102,46 @@ def get_garmin_data():
             data["train_type"] = act.get("activityType", {}).get("typeKey", "")
             data["train_min"]  = round(act.get("duration", 0) / 60)
             data["train_dist"] = round(act.get("distance", 0) / 1000, 2)
-            print(f"  ✓ Training: {data['train_type']} ({data['train_min']} min)")
+            data["avg_hr"]     = act.get("averageHR", "")
+            data["max_hr"]     = act.get("maxHR", "")
+
+            # Tempo (min:sec per km)
+            speed = act.get("averageSpeed", 0)
+            if speed and speed > 0:
+                sec_km = 1000 / speed
+                data["avg_pace"] = f"{int(sec_km // 60)}:{int(sec_km % 60):02d}"
+
+            # Hardloop dynamics (alleen bij hardloopactiviteiten)
+            activity_id = act.get("activityId")
+            if activity_id and "run" in data["train_type"].lower():
+                try:
+                    details = client.get_activity(activity_id)
+                    data["cadence"]          = details.get("averageRunningCadenceInStepsPerMinute", "")
+                    data["ground_contact"]   = details.get("avgGroundContactTime", "")
+                    data["vertical_osc"]     = round(details.get("avgVerticalOscillation", 0) / 10, 1) or ""  # mm → cm
+                    data["vertical_ratio"]   = details.get("avgVerticalRatio", "")
+                    data["stride_length"]    = round(details.get("avgStrideLength", 0) / 100, 2) or ""  # cm → m
+                    data["training_effect"]  = details.get("trainingEffect", "")
+                    print(f"  ✓ Hardloop dynamics: cadans {data['cadence']}, GCT {data['ground_contact']}ms")
+                except Exception as e:
+                    print(f"  ⚠ Hardloop dynamics: {e}")
+
+            print(f"  ✓ Training: {data['train_type']} ({data['train_min']} min, HR avg {data.get('avg_hr','-')})")
         else:
             data["trained"]    = False
             data["train_type"] = ""
     except Exception as e:
         print(f"  ✗ Activiteiten: {e}")
+
+    # VO2max
+    try:
+        vo2 = client.get_max_metrics(TODAY)
+        if isinstance(vo2, list) and vo2:
+            data["vo2max"] = vo2[0].get("generic", {}).get("vo2MaxPreciseValue", "")
+            if data["vo2max"]:
+                print(f"  ✓ VO2max: {data['vo2max']}")
+    except Exception as e:
+        print(f"  ⚠ VO2max: {e}")
 
     return data
 
@@ -160,6 +197,8 @@ HEADERS = [
     "sleep_h", "sleep_q", "sleep_deep", "sleep_rem",
     "hrv", "rhr", "stress", "body_battery", "steps",
     "trained", "train_type", "train_min", "train_dist",
+    "avg_hr", "max_hr", "avg_pace", "cadence",
+    "ground_contact", "vertical_osc", "vertical_ratio", "stride_length", "training_effect", "vo2max",
     "energy", "mental_unrest", "breathing", "breathing_type", "notes"
 ]
 
