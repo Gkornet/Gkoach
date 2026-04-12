@@ -16,7 +16,7 @@ async function getJWT() {
     aud: "https://oauth2.googleapis.com/token", exp: now + 3600, iat: now
   }));
   const unsigned  = `${header}.${payload}`;
-  const keyData   = SA_KEY.replace(/-----BEGIN RSA PRIVATE KEY-----|-----END RSA PRIVATE KEY-----|\n/g, "");
+  const keyData   = SA_KEY.replace(/-----BEGIN( RSA)? PRIVATE KEY-----|-----END( RSA)? PRIVATE KEY-----|\n/g, "");
   const binaryKey = Uint8Array.from(atob(keyData), c => c.charCodeAt(0));
   const cryptoKey = await crypto.subtle.importKey(
     "pkcs8", binaryKey.buffer, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]
