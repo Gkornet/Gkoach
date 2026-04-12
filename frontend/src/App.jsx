@@ -621,9 +621,9 @@ export default function App() {
                       <div style={{ fontSize: 15, fontWeight: 600, color: done ? C.text3 : C.text, textDecoration: done ? "line-through" : "none" }}>{task.label}</div>
                       <div style={{ fontSize: 13, color: C.text3, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{task.sub}</div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                       <div style={{ fontSize: 11, color: task.color, fontWeight: 600, background: task.color + "15", padding: "3px 8px", borderRadius: 20 }}>{task.cat}</div>
-                      <div style={{ fontSize: 16, color: C.text3 }}>›</div>
+                      <svg width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M1 1l6 5.5L1 12" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                     </div>
                   </div>
                 );
