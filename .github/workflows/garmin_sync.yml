@@ -1,0 +1,63 @@
+# .github/workflows/garmin_sync.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Draait elke ochtend om 06:30 Nederlandse tijd (05:30 UTC)
+# Haalt Garmin-data op en schrijft naar Google Sheets
+# Geen server nodig — volledig gratis via GitHub Actions
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Garmin Daily Sync
+
+on:
+  schedule:
+    # 05:30 UTC = 06:30 NL (winter) / 07:30 NL (zomer)
+    # Pas aan naar 04:30 UTC voor zomertijd als je 06:30 wilt
+    - cron: '30 5 * * *'
+  workflow_dispatch:  # Handmatig triggeren via GitHub UI
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Python instellen
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Dependencies installeren
+        run: |
+          cd backend
+          pip install garminconnect gspread google-auth python-dotenv
+
+      - name: Garmin tokens herstellen (cache)
+        uses: actions/cache@v4
+        with:
+          path: backend/.garmin_tokens.json
+          key: garmin-tokens-${{ github.run_id }}
+          restore-keys: |
+            garmin-tokens-
+
+      - name: Garmin sync uitvoeren
+        env:
+          GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          SHEET_TAB_NAME: coach_data
+          GOOGLE_SERVICE_ACCOUNT_JSON: ./backend/service_account.json
+        run: |
+          # Service account JSON aanmaken vanuit GitHub Secret
+          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}' > backend/service_account.json
+          cd backend
+          python garmin_sync.py
+
+      - name: Tokens opslaan voor morgen
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: backend/.garmin_tokens.json
+          key: garmin-tokens-${{ github.run_id }}
