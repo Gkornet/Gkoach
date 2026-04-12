@@ -23,7 +23,7 @@ GARMIN_PASSWORD = os.getenv("GARMIN_PASSWORD")
 SHEET_ID        = os.getenv("GOOGLE_SHEET_ID")
 SERVICE_ACCOUNT = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")  # pad naar JSON file
 SHEET_TAB       = os.getenv("SHEET_TAB_NAME", "coach_data")
-TOKEN_STORE     = os.path.join(os.path.dirname(__file__), ".garmin_tokens.json")
+TOKEN_STORE     = os.path.join(os.path.dirname(__file__), ".garmin_tokens")
 
 TODAY = datetime.date.today().isoformat()
 
@@ -34,22 +34,33 @@ def get_garmin_data():
     print(f"[{TODAY}] Verbinden met Garmin Connect...")
 
     # Token-gebaseerd inloggen (voorkomt dat Garmin account geblokkeerd raakt)
-    client = Garmin()
-    try:
-        client.login(TOKEN_STORE)
-        print("  ✓ Ingelogd via opgeslagen tokens")
-    except Exception:
-        print("  → Tokens verlopen of niet aanwezig, opnieuw inloggen...")
-        import sys
+    import sys, pickle
+    client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+
+    # Probeer opgeslagen tokens te laden
+    token_file = TOKEN_STORE + ".pkl"
+    loaded = False
+    if os.path.exists(token_file):
+        try:
+            with open(token_file, "rb") as f:
+                client = pickle.load(f)
+            client.connectapi(f"/usersummary-service/usersummary/daily/{client.display_name}", params={"calendarDate": TODAY})
+            print("  ✓ Ingelogd via opgeslagen tokens")
+            loaded = True
+        except Exception:
+            print("  → Tokens verlopen, opnieuw inloggen...")
+
+    if not loaded:
         is_interactive = sys.stdin.isatty()
         prompt_mfa = (lambda: input("  Voer je Garmin MFA-code in: ")) if is_interactive else None
         client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD, prompt_mfa=prompt_mfa)
         client.login()
         try:
-            client.garth.dump(TOKEN_STORE)
+            with open(token_file, "wb") as f:
+                pickle.dump(client, f)
             print("  ✓ Nieuw ingelogd en tokens opgeslagen")
-        except Exception:
-            print("  ⚠ Tokens konden niet worden opgeslagen (niet kritiek)")
+        except Exception as e:
+            print(f"  ⚠ Tokens konden niet worden opgeslagen: {e}")
 
     data = {}
 
