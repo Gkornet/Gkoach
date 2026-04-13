@@ -452,18 +452,35 @@ const Ring = ({ value, max = 100, color, size = 120, stroke = 10 }) => {
   );
 };
 
-const Sparkline = ({ data, color, height = 40 }) => {
+const Sparkline = ({ data, color, height = 40, fill = false, refLine = null }) => {
   if (!data || data.length < 2) return null;
   const min = Math.min(...data), max = Math.max(...data), range = max - min || 1;
   const W = 200, H = height, p = 3;
   const pts = data.map((v, i) => {
     const x = p + (i / (data.length - 1)) * (W - p * 2);
     const y = H - p - ((v - min) / range) * (H - p * 2);
-    return `${x},${y}`;
-  }).join(" ");
+    return [x, y];
+  });
+  const ptsStr = pts.map(([x, y]) => `${x},${y}`).join(" ");
+  const fillPts = `${pts[0][0]},${H} ` + ptsStr + ` ${pts[pts.length-1][0]},${H}`;
+  const refY = refLine != null ? H - p - ((refLine - min) / range) * (H - p * 2) : null;
+  const id = `g${Math.random().toString(36).slice(2,7)}`;
   return (
     <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height }} preserveAspectRatio="none">
-      <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={pts} />
+      {fill && (
+        <>
+          <defs>
+            <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity="0.18" />
+              <stop offset="100%" stopColor={color} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <polygon fill={`url(#${id})`} points={fillPts} />
+        </>
+      )}
+      {refY != null && <line x1={p} y1={refY} x2={W-p} y2={refY} stroke={color} strokeWidth="1" strokeDasharray="3,3" opacity="0.4" />}
+      <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={ptsStr} />
+      <circle cx={pts[pts.length-1][0]} cy={pts[pts.length-1][1]} r="3" fill={color} />
     </svg>
   );
 };
@@ -1242,93 +1259,278 @@ export default function App() {
       )}
 
       {/* ── TRENDS ── */}
-      {tab === "trends" && (
-        <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "56px 16px 90px" }}>
-          <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px", marginBottom: 4 }}>Trends</div>
-          <div style={{ fontSize: 15, color: C.text3, marginBottom: 20 }}>Jouw voortgang over tijd</div>
+      {tab === "trends" && (() => {
+        const n = entries.length;
+        const last7  = entries.slice(-7);
+        const prev7  = entries.slice(-14, -7);
+        const last30 = entries.slice(-30);
 
-          {entries.length < 3 ? (
-            <div style={{ textAlign: "center", padding: "48px 0" }}>
-              <div style={{ fontSize: 44, marginBottom: 12 }}>📈</div>
-              <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6 }}>Voortgang in aantocht</div>
-              <div style={{ fontSize: 15, color: C.text3 }}>Vul minimaal 3 dagen in.</div>
+        // Compute insights
+        const insights = [];
+
+        // 1. HRV week-over-week
+        const hrv7   = numArr(last7, "hrv");
+        const hrvP7  = numArr(prev7, "hrv");
+        const hrv7a  = hrv7.length  ? hrv7.reduce((a,b)=>a+b,0)/hrv7.length   : null;
+        const hrvP7a = hrvP7.length ? hrvP7.reduce((a,b)=>a+b,0)/hrvP7.length : null;
+        if (hrv7a != null) {
+          if (hrvP7a != null && Math.abs(hrv7a - hrvP7a) > 1) {
+            const d = hrv7a - hrvP7a;
+            insights.push({ icon: "💚", color: d>0?C.green:C.red,
+              title: d>0 ? "HRV verbetert" : "HRV daalt",
+              body: `Gemiddeld ${Math.abs(d).toFixed(1)} ms ${d>0?"hoger":"lager"} dan vorige week (${hrv7a.toFixed(0)} vs ${hrvP7a.toFixed(0)} ms).` });
+          } else {
+            insights.push({ icon: "💚", color: C.text3,
+              title: "HRV stabiel",
+              body: `Gemiddeld ${hrv7a.toFixed(0)} ms deze week.` });
+          }
+        }
+
+        // 2. Slaap consistentie
+        const sleep7 = numArr(last7, "sleep_h");
+        if (sleep7.length >= 2) {
+          const below = sleep7.filter(v => v < 7.5).length;
+          const sleepAvg = sleep7.reduce((a,b)=>a+b,0)/sleep7.length;
+          insights.push({ icon: "🌙", color: below<=1?C.green:below<=3?C.orange:C.red,
+            title: below===0 ? "Slaap op schema" : `${below}× onder slaapдoel`,
+            body: `Gemiddeld ${sleepAvg.toFixed(1)}u · doel 7.5u · ${sleep7.length-below} van ${sleep7.length} nachten gehaald.` });
+        }
+
+        // 3. Training frequentie
+        const trainDays7 = last7.filter(e => isTrue(e.trained)).length;
+        const trainPrev  = prev7.filter(e => isTrue(e.trained)).length;
+        if (n >= 3) {
+          const delta = prev7.length ? trainDays7 - trainPrev : null;
+          insights.push({ icon: "🏃", color: trainDays7>=4?C.green:trainDays7>=2?C.orange:C.text3,
+            title: `${trainDays7} van 7 dagen getraind`,
+            body: delta!=null && delta!==0
+              ? `${Math.abs(delta)} dag${Math.abs(delta)>1?"en":""} ${delta>0?"meer":"minder"} dan vorige week (${trainPrev} dagen).`
+              : trainDays7>=4 ? "Goede frequentie — houd dit vast." : trainDays7>=2 ? "Solide basis, ruimte voor meer." : "Laag volume — bewust herstel of mis je trainingen?" });
+        }
+
+        // 4. Slaap→HRV correlatie (min 6 paired punten)
+        const paired = entries.slice(1).map((e, i) => ({
+          hrv: parseNum(e.hrv), sleep: parseNum(entries[i].sleep_h)
+        })).filter(p => !isNaN(p.hrv) && p.hrv>0 && !isNaN(p.sleep) && p.sleep>0);
+        if (paired.length >= 6) {
+          const good = paired.filter(p=>p.sleep>=7.5).map(p=>p.hrv);
+          const poor = paired.filter(p=>p.sleep<7).map(p=>p.hrv);
+          if (good.length>=2 && poor.length>=2) {
+            const ga = good.reduce((a,b)=>a+b,0)/good.length;
+            const pa = poor.reduce((a,b)=>a+b,0)/poor.length;
+            if (ga - pa > 2) insights.push({ icon: "🔗", color: C.indigo,
+              title: "Slaap verhoogt je HRV",
+              body: `Na ≥7.5u slaap is je HRV ${(ga-pa).toFixed(0)} ms hoger (${ga.toFixed(0)} vs ${pa.toFixed(0)} ms na <7u).` });
+          }
+        }
+
+        // 5. Gewicht trend
+        const wVals = numArr(entries.slice(-21), "weight").filter(v=>v>40);
+        if (wVals.length >= 3) {
+          const wFirst = wVals[0], wLast = wVals[wVals.length-1];
+          const diff = wLast - wFirst;
+          if (Math.abs(diff) > 0.2) insights.push({ icon: "⚖️", color: C.text3,
+            title: diff<0 ? `−${Math.abs(diff).toFixed(1)} kg afgenomen` : `+${diff.toFixed(1)} kg toegenomen`,
+            body: `Van ${wFirst.toFixed(1)} naar ${wLast.toFixed(1)} kg in ${wVals.length} metingen.` });
+        }
+
+        // 6. Body battery trend
+        const bat7 = numArr(last7, "body_battery");
+        const batP = numArr(prev7, "body_battery");
+        if (bat7.length>=2 && batP.length>=2) {
+          const b7a = bat7.reduce((a,b)=>a+b,0)/bat7.length;
+          const bPa = batP.reduce((a,b)=>a+b,0)/batP.length;
+          const d = b7a - bPa;
+          if (Math.abs(d) > 3) insights.push({ icon: "🔋", color: d>0?C.green:C.orange,
+            title: d>0 ? "Battery neemt toe" : "Battery daalt",
+            body: `Gemiddeld ${b7a.toFixed(0)}% deze week vs ${bPa.toFixed(0)}% vorige week.` });
+        }
+
+        // Week-over-week tiles
+        const wkTiles = [
+          { l: "HRV",      f: "hrv",          u: "ms", c: C.green,  good:"up"   },
+          { l: "Slaap",    f: "sleep_h",       u: "u",  c: C.indigo, good:"up"   },
+          { l: "Battery",  f: "body_battery",  u: "%",  c: C.teal,   good:"up"   },
+          { l: "Stress",   f: "stress",        u: "",   c: C.orange, good:"down" },
+        ].map(m => {
+          const c7  = numArr(last7, m.f);  const ca = c7.length  ? c7.reduce((a,b)=>a+b,0)/c7.length   : null;
+          const p7  = numArr(prev7, m.f);  const pa = p7.length  ? p7.reduce((a,b)=>a+b,0)/p7.length   : null;
+          const delta = ca!=null&&pa!=null ? ca-pa : null;
+          const good = delta==null ? null : (m.good==="up" ? delta>0.5 : delta<-0.5);
+          return { ...m, val: ca!=null?ca.toFixed(1):null, delta, good };
+        });
+
+        return (
+          <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "56px 16px 90px" }}>
+            <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px", marginBottom: 2 }}>Trends</div>
+            <div style={{ fontSize: 14, color: C.text3, marginBottom: 20 }}>
+              {n} dagen data · {n>0?fmt(entries[0].date):""}{n>1?" t/m "+fmt(entries[n-1].date):""}
             </div>
-          ) : (
-            <>
-              {/* Summary row */}
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
-                {[
-                  { l: "HRV gem.",   f: "hrv",     u: "ms",  c: C.green  },
-                  { l: "Slaap gem.", f: "sleep_h",  u: "u",   c: C.indigo },
-                  { l: "RHR gem.",   f: "rhr",      u: "bpm", c: C.teal   },
-                  { l: "Stress gem.",f: "stress",   u: "/10", c: C.orange },
-                ].map(m => {
-                  const v = avg(numArr(entries, m.f));
-                  return (
-                    <div key={m.l} style={{ background: C.card, borderRadius: 14, padding: 14 }}>
-                      <div style={{ fontSize: 12, color: C.text3, marginBottom: 4 }}>{m.l}</div>
-                      <div style={{ fontSize: 26, fontWeight: 700, color: m.c }}>{v}<span style={{ fontSize: 12, color: C.text3, fontWeight: 400 }}> {m.u}</span></div>
-                    </div>
-                  );
-                })}
+
+            {n < 2 ? (
+              <div style={{ textAlign: "center", padding: "48px 0" }}>
+                <div style={{ fontSize: 44, marginBottom: 12 }}>📈</div>
+                <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6 }}>Voortgang in aantocht</div>
+                <div style={{ fontSize: 15, color: C.text3 }}>Sync meer dagen voor inzichten.</div>
               </div>
-
-              {/* Trend cards */}
-              {[
-                { label: "HRV (ms)",             field: "hrv",          color: C.green,  good: "up"   },
-                { label: "Rusthartslag (bpm)",    field: "rhr",          color: C.teal,   good: "down" },
-                { label: "Slaapduur (uur)",       field: "sleep_h",      color: C.indigo, good: "up"   },
-                { label: "Slaapkwaliteit (1–10)", field: "sleep_q",      color: C.indigo, good: "up"   },
-                { label: "Energie (1–10)",        field: "energy",       color: C.yellow, good: "up"   },
-                { label: "Stressniveau (1–10)",   field: "stress",       color: C.orange, good: "down" },
-                { label: "Body battery (%)",      field: "body_battery", color: C.teal,   good: "up"   },
-                { label: "Stappen",               field: "steps",        color: C.green,  good: "up"   },
-                { label: "Gewicht (kg)",          field: "weight",       color: C.text3,  good: "down" },
-                { label: "VO2max",                field: "vo2max",       color: C.blue,   good: "up"   },
-              ].map(cfg => {
-                const vals = numArr(entries, cfg.field);
-                if (!vals.length) return null;
-                const last = vals[vals.length - 1];
-                const prev = vals.slice(-4, -1);
-                const prevA = prev.length ? prev.reduce((a,b)=>a+b,0)/prev.length : last;
-                const dir = last > prevA + 0.5 ? "up" : last < prevA - 0.5 ? "down" : "flat";
-                const isGood = (cfg.good==="up"&&dir==="up")||(cfg.good==="down"&&dir==="down");
-                const trendCol = dir==="flat" ? C.text3 : isGood ? C.green : C.red;
-                return (
-                  <div key={cfg.field} style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-                      <span style={{ fontSize: 14, color: C.text3 }}>{cfg.label}</span>
-                      <div>
-                        <span style={{ fontSize: 22, fontWeight: 700 }}>{last}</span>
-                        <span style={{ fontSize: 13, color: trendCol, marginLeft: 4, fontWeight: 600 }}>
-                          {dir==="up"?"↑":dir==="down"?"↓":"→"}
-                        </span>
+            ) : (
+              <>
+                {/* Week tiles */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 16 }}>
+                  {wkTiles.map(m => (
+                    <div key={m.l} style={{ background: C.card, borderRadius: 14, padding: "14px 16px" }}>
+                      <div style={{ fontSize: 12, color: C.text3, marginBottom: 6 }}>{m.l} · 7 dagen gem.</div>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                        <span style={{ fontSize: 26, fontWeight: 700, color: m.c }}>{m.val ?? "—"}</span>
+                        <span style={{ fontSize: 12, color: C.text3 }}>{m.u}</span>
                       </div>
+                      {m.delta != null && (
+                        <div style={{ fontSize: 12, marginTop: 4, color: m.good?C.green:m.good===false?C.red:C.text3, fontWeight: 500 }}>
+                          {m.delta>0?"+":""}{m.delta.toFixed(1)} vs vorige week
+                        </div>
+                      )}
                     </div>
-                    <Sparkline data={vals} color={cfg.color} />
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.text3, marginTop: 6 }}>
-                      <span>gem. {avg(vals)}</span>
-                      <span>{vals.length} metingen</span>
-                    </div>
-                  </div>
-                );
-              })}
-
-              {/* Training heatmap */}
-              <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 8 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>Trainingsdagen</div>
-                <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-                  {entries.slice(-28).map(e => (
-                    <div key={e.date} title={`${fmt(e.date)}: ${e.train_type || "rust"}`}
-                      style={{ width: 24, height: 24, borderRadius: 6, background: isTrue(e.trained) ? C.orange : C.fill }} />
                   ))}
                 </div>
-                <div style={{ marginTop: 8, fontSize: 12, color: C.text3 }}>Laatste 28 dagen · oranje = training</div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
+
+                {/* Inzichten */}
+                {insights.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Inzichten</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {insights.map((ins, i) => (
+                        <div key={i} style={{ background: C.card, borderRadius: 14, padding: "14px 16px", display: "flex", gap: 14, alignItems: "flex-start" }}>
+                          <div style={{ fontSize: 20, marginTop: 1, flexShrink: 0 }}>{ins.icon}</div>
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: ins.color, marginBottom: 2 }}>{ins.title}</div>
+                            <div style={{ fontSize: 13, color: C.text3, lineHeight: 1.5 }}>{ins.body}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* HRV chart */}
+                {numArr(last30, "hrv").length >= 2 && (
+                  <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600 }}>HRV</div>
+                      <div style={{ fontSize: 22, fontWeight: 700, color: C.green }}>
+                        {numArr(last30,"hrv").slice(-1)[0]}
+                        <span style={{ fontSize: 12, color: C.text3, fontWeight: 400 }}> ms</span>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 12, color: C.text3, marginBottom: 10 }}>
+                      gem. {avg(numArr(last30,"hrv"))} ms · {numArr(last30,"hrv").length} metingen
+                    </div>
+                    <Sparkline data={numArr(last30,"hrv")} color={C.green} height={56} fill />
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:C.text3, marginTop:4 }}>
+                      <span>min {Math.min(...numArr(last30,"hrv"))}</span>
+                      <span>max {Math.max(...numArr(last30,"hrv"))}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Slaap + Battery charts */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+                  {[
+                    { l: "Slaap", f: "sleep_h", u: "u",  c: C.indigo, ref: 7.5 },
+                    { l: "Battery", f: "body_battery", u: "%", c: C.teal, ref: null },
+                  ].map(m => {
+                    const vals = numArr(last30, m.f);
+                    if (vals.length < 2) return null;
+                    return (
+                      <div key={m.l} style={{ background: C.card, borderRadius: 16, padding: 14 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2 }}>{m.l}</div>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: m.c }}>
+                          {vals.slice(-1)[0]}<span style={{ fontSize: 11, color: C.text3, fontWeight:400 }}>{m.u}</span>
+                        </div>
+                        <div style={{ fontSize: 11, color: C.text3, marginBottom: 8 }}>gem. {avg(vals)}{m.u}</div>
+                        <Sparkline data={vals} color={m.c} height={44} fill refLine={m.ref} />
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Gewicht */}
+                {wVals.length >= 2 && (
+                  <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600 }}>Gewicht</div>
+                      <div style={{ fontSize: 20, fontWeight: 700 }}>
+                        {wVals.slice(-1)[0].toFixed(1)}<span style={{ fontSize: 12, color: C.text3, fontWeight:400 }}> kg</span>
+                      </div>
+                    </div>
+                    <Sparkline data={wVals} color={C.text3} height={44} fill />
+                  </div>
+                )}
+
+                {/* Trainingsoverzicht */}
+                <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Trainingen — laatste 4 weken</div>
+                  {/* Weekly bars */}
+                  {(() => {
+                    const weeks = [3,2,1,0].map(w => {
+                      const start = -28 + w*7, end = start + 7;
+                      const slice = entries.slice(start, end || undefined);
+                      const days = slice.filter(e=>isTrue(e.trained)).length;
+                      const types = slice.filter(e=>isTrue(e.trained)).map(e=>e.train_type||"training");
+                      return { label: `W${4-w}`, days, total: slice.length, types };
+                    });
+                    const maxDays = Math.max(...weeks.map(w=>w.days), 1);
+                    return (
+                      <div style={{ display:"flex", gap:8, alignItems:"flex-end", marginBottom:16, height:60 }}>
+                        {weeks.map((w,i) => (
+                          <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                            <div style={{ fontSize:11, fontWeight:600, color:C.text3 }}>{w.days}</div>
+                            <div style={{ width:"100%", background:C.fill, borderRadius:6, overflow:"hidden", height:36 }}>
+                              <div style={{ width:"100%", height:`${(w.days/maxDays)*100}%`, background:w.days>=4?C.green:w.days>=2?C.orange:C.fill, borderRadius:6, transition:"height 0.4s", marginTop:`${(1-w.days/maxDays)*100}%` }} />
+                            </div>
+                            <div style={{ fontSize:11, color:C.text3 }}>{w.label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                  {/* Dot heatmap */}
+                  <div style={{ display:"flex", gap:4, flexWrap:"wrap" }}>
+                    {entries.slice(-28).map(e => (
+                      <div key={e.date}
+                        style={{ width:22, height:22, borderRadius:5, display:"flex", alignItems:"center", justifyContent:"center", fontSize:11,
+                          background: isTrue(e.trained) ? C.orange+"22" : C.fill }}
+                        title={`${fmt(e.date)}: ${e.train_type||"rust"}`}>
+                        {isTrue(e.trained) && <div style={{ width:8, height:8, borderRadius:4, background:C.orange }} />}
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop:8, fontSize:12, color:C.text3 }}>
+                    {entries.slice(-28).filter(e=>isTrue(e.trained)).length} trainingen in 28 dagen
+                  </div>
+                </div>
+
+                {/* Readiness history */}
+                {(() => {
+                  const rVals = entries.slice(-21).map(e => calcReadiness(e, entries)).filter(v=>v!=null);
+                  if (rVals.length < 2) return null;
+                  return (
+                    <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"baseline", marginBottom:4 }}>
+                        <div style={{ fontSize:15, fontWeight:600 }}>Readiness</div>
+                        <div style={{ fontSize:20, fontWeight:700, color:readinessColor(rVals.slice(-1)[0]) }}>
+                          {rVals.slice(-1)[0]}
+                        </div>
+                      </div>
+                      <div style={{ fontSize:12, color:C.text3, marginBottom:10 }}>gem. {avg(rVals)} · {rVals.length} berekeningen</div>
+                      <Sparkline data={rVals} color={C.blue} height={44} fill />
+                    </div>
+                  );
+                })()}
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── MEER / SETUP ── */}
       {tab === "setup" && (
