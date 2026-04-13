@@ -175,24 +175,36 @@ def write_to_sheet(garmin_data):
         ws.append_row(HEADERS)
         print(f"  ✓ Nieuw tabblad '{SHEET_TAB}' aangemaakt met headers")
 
-    # Check of vandaag al bestaat
+    # DEBUG: toon wat er in de sheet staat
     all_dates = ws.col_values(1)
+    print(f"  DEBUG: TODAY={TODAY}")
+    print(f"  DEBUG: all_dates={all_dates}")
+    print(f"  DEBUG: TODAY in all_dates={TODAY in all_dates}")
+    print(f"  DEBUG: gspread version={gspread.__version__}")
+
     if TODAY in all_dates:
         row_idx = all_dates.index(TODAY) + 1
         print(f"  → Rij {row_idx} bijwerken (datum {TODAY} bestaat al)")
-        # Alleen Garmin-velden overschrijven, rest bewaren
         existing = ws.row_values(row_idx)
         existing = existing + [""] * (len(HEADERS) - len(existing))
         row = dict(zip(HEADERS, existing))
         row.update({k: v for k, v in garmin_data.items()})
         row["date"] = TODAY
-        ws.update([list(row.values())], f"A{row_idx}")
+        # gspread 6.x: update(values, range_name) — gspread 5.x: update(range_name, values)
+        import gspread as _gs
+        major = int(_gs.__version__.split(".")[0])
+        if major >= 6:
+            result = ws.update([list(row.values())], f"A{row_idx}")
+        else:
+            result = ws.update(f"A{row_idx}", [list(row.values())])
+        print(f"  ✓ Rij {row_idx} bijgewerkt (result={result})")
     else:
         row = {h: "" for h in HEADERS}
         row.update(garmin_data)
         row["date"] = TODAY
-        ws.append_row(list(row.values()))
-        print(f"  ✓ Nieuwe rij toegevoegd voor {TODAY}")
+        print(f"  DEBUG: appending row, date={row['date']}, fields met data={[k for k,v in row.items() if v not in ('', None, False)]}")
+        result = ws.append_row(list(row.values()), value_input_option="USER_ENTERED")
+        print(f"  ✓ Nieuwe rij toegevoegd voor {TODAY} (result={result})")
 
     print("  ✓ Google Sheets bijgewerkt")
 
