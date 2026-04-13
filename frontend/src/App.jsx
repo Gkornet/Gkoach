@@ -370,6 +370,50 @@ Warm, bemoedigend maar eerlijk. Concreet en persoonlijk. Max 350 woorden.`;
   return d.content?.find(b => b.type === "text")?.text || "Geen analyse beschikbaar.";
 }
 
+async function fetchDailyCoaching(entries) {
+  const recent = entries.slice(-14);
+  const todayStr = today();
+  const todayRow = recent.find(e => e.date === todayStr) || recent[recent.length - 1];
+
+  const prompt = `Je bent een directe, praktische personal coach. Geef dagelijks advies op basis van de data.
+
+VANDAAG: ${todayStr}
+RECENTE DATA (tot 14 dagen): ${JSON.stringify(recent.map(e => ({
+  date: e.date, sleep_h: e.sleep_h, sleep_q: e.sleep_q,
+  hrv: e.hrv, hrv_weekly: e.hrv_weekly, rhr: e.rhr,
+  stress: e.stress, body_battery: e.body_battery,
+  trained: e.trained, train_type: e.train_type, train_min: e.train_min,
+  steps: e.steps, weight: e.weight, mood: e.mood, alcohol: e.alcohol,
+})), null, 2)}
+
+ACHTERGROND: Geen ervaren sporter — leert hardlopen, zittend beroep, herstelt van intensieve periode (bedrijf failliet gegaan). Kleine stappen zijn successen. Mentaal herstel even belangrijk als fysiek. Heeft events: 10km Noordwijk 5 juli 2026, Gym-race Utrecht 4 oktober 2026.
+
+Geef coaching in EXACT deze 3 secties (gebruik ### als scheidingsteken):
+### Goed bezig
+Noem 1-2 concrete dingen die goed gaan in de data van de afgelopen dagen. Specifiek en persoonlijk.
+
+### Doe dit vandaag
+Geef 2-3 concrete, direct uitvoerbare acties voor vandaag. Praktisch en realistisch voor iemand met een zittend beroep.
+
+### Aandachtspunt
+Noem 1 ding dat aandacht verdient. Direct en eerlijk, maar constructief. Geen vage adviezen.
+
+Toon: direct, concreet, geen wolligheid. Max 180 woorden totaal.`;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": CLAUDE_KEY,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 400, messages: [{ role: "user", content: prompt }] })
+  });
+  const d2 = await res.json();
+  return d2.content?.find(b => b.type === "text")?.text || "";
+}
+
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
   bg:      "#F2F2F7",
@@ -560,10 +604,12 @@ export default function App() {
   const [syncing,   setSyncing]   = useState(false);
   const [tab,       setTab]       = useState("vandaag");
   const [entry,     setEntry]     = useState({ ...EMPTY, date: today() });
-  const [coaching,    setCoaching]    = useState("");
-  const [coachLoad,   setCoachLoad]   = useState(false);
-  const [dailyTip,    setDailyTip]    = useState("");
-  const [dailyTipLoad,setDailyTipLoad]= useState(false);
+  const [coaching,       setCoaching]       = useState("");
+  const [coachLoad,      setCoachLoad]      = useState(false);
+  const [dailyCoaching,  setDailyCoaching]  = useState("");
+  const [dailyCoachLoad, setDailyCoachLoad] = useState(false);
+  const [dailyTip,       setDailyTip]       = useState("");
+  const [dailyTipLoad,   setDailyTipLoad]   = useState(false);
   const [question,  setQuestion]  = useState("");
   const [saveMsg,   setSaveMsg]   = useState("");
   const [sheetMode, setSheetMode] = useState(!!SHEET_ID);
@@ -736,6 +782,19 @@ export default function App() {
       runDailyTip(plan, planned, readiness, displayEntry, contextEntry);
     }
   }, [tab, isToday, loading, entries.length, planDone]); // eslint-disable-line
+
+  // Auto-fetch dagelijkse coaching als coach tab opent
+  useEffect(() => {
+    if (tab !== "coach" || loading || !CLAUDE_KEY || entries.length === 0) return;
+    const cacheKey = `daily_coaching_${today()}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) { setDailyCoaching(cached); return; }
+    setDailyCoachLoad(true);
+    fetchDailyCoaching(entries)
+      .then(result => { if (result) { setDailyCoaching(result); localStorage.setItem(cacheKey, result); } })
+      .catch(() => {})
+      .finally(() => setDailyCoachLoad(false));
+  }, [tab, loading, entries.length]); // eslint-disable-line
 
   const TABS = [
     { id: "vandaag",  icon: "house",    label: "Vandaag"  },
@@ -949,10 +1008,10 @@ export default function App() {
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Readiness</div>
-                {/* HRV rij — label links, waarden rechts uitgelijnd */}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                  <span style={{ fontSize: 12, color: C.text3 }}>HRV</span>
+                {/* HRV rij — alles rechts uitgelijnd */}
+                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 6 }}>
                   <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
+                    <span style={{ fontSize: 11, color: C.text3, alignSelf: "center" }}>HRV</span>
                     {[
                       { l: "nacht", v: contextEntry?.hrv        },
                       { l: "7d",    v: contextEntry?.hrv_weekly },
@@ -1212,11 +1271,59 @@ export default function App() {
       {tab === "coach" && (
         <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "56px 16px 90px" }}>
           <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px", marginBottom: 4 }}>Coach</div>
-          <div style={{ fontSize: 15, color: C.text3, marginBottom: 20 }}>Persoonlijke analyse op basis van jouw data</div>
+          <div style={{ fontSize: 15, color: C.text3, marginBottom: 20 }}>
+            {new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })}
+          </div>
 
+          {/* Dagelijks advies — auto-geladen */}
+          {dailyCoachLoad && (
+            <div style={{ textAlign: "center", padding: "40px 0", color: C.text3 }}>
+              <div style={{ fontSize: 40, marginBottom: 10, animation: "pulse 1.5s infinite" }}>🧠</div>
+              <div style={{ fontSize: 14 }}>Dagadvies laden...</div>
+            </div>
+          )}
+
+          {dailyCoaching && !dailyCoachLoad && (() => {
+            const sectionIcons = { "Goed bezig": "✅", "Doe dit vandaag": "⚡", "Aandachtspunt": "🎯" };
+            const sectionColors = { "Goed bezig": C.green, "Doe dit vandaag": C.blue, "Aandachtspunt": C.orange };
+            return (
+              <div className="fade" style={{ marginBottom: 20 }}>
+                {dailyCoaching.split(/###\s+/).filter(Boolean).map((s, i) => {
+                  const [title, ...rest] = s.trim().split("\n");
+                  const t = title.trim();
+                  const color = sectionColors[t] || C.text3;
+                  return (
+                    <div key={i} style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 8 }}>
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
+                        <span style={{ fontSize: 18 }}>{sectionIcons[t] || "•"}</span>
+                        <span style={{ fontSize: 14, fontWeight: 700, color }}>{t}</span>
+                      </div>
+                      <div style={{ fontSize: 15, color: C.text2, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{rest.join("\n").trim()}</div>
+                    </div>
+                  );
+                })}
+                <div style={{ textAlign: "right", marginTop: 4 }}>
+                  <button onClick={() => {
+                    localStorage.removeItem(`daily_coaching_${today()}`);
+                    setDailyCoaching("");
+                    setDailyCoachLoad(true);
+                    fetchDailyCoaching(entries)
+                      .then(r => { if (r) { setDailyCoaching(r); localStorage.setItem(`daily_coaching_${today()}`, r); } })
+                      .catch(() => {})
+                      .finally(() => setDailyCoachLoad(false));
+                  }} style={{ fontSize: 12, color: C.text3, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}>
+                    ↻ vernieuw
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Stel een vraag */}
+          <div style={{ fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>Stel een vraag</div>
           <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 12 }}>
             <textarea rows={2} style={{ resize: "none", fontSize: 15 }}
-              placeholder="Stel een vraag of beschrijf hoe je je voelt..."
+              placeholder="Hoe voel je je? Of stel een specifieke vraag..."
               value={question} onChange={e => setQuestion(e.target.value)} />
             <button onClick={runCoach} disabled={coachLoad} style={{
               width: "100%", marginTop: 12, background: coachLoad ? C.fill : C.blue,
@@ -1224,14 +1331,14 @@ export default function App() {
               padding: "14px", fontSize: 16, fontWeight: 600, cursor: coachLoad ? "not-allowed" : "pointer",
               fontFamily: "inherit", transition: "all .2s"
             }}>
-              {coachLoad ? "Analyseren..." : "Coach mij nu"}
+              {coachLoad ? "Analyseren..." : "Analyseer"}
             </button>
           </div>
 
           {coachLoad && (
-            <div style={{ textAlign: "center", padding: "40px 0", color: C.text3 }}>
-              <div style={{ fontSize: 44, marginBottom: 12, animation: "pulse 1.5s infinite" }}>🧠</div>
-              <div style={{ fontSize: 15, fontWeight: 500 }}>Data wordt geanalyseerd</div>
+            <div style={{ textAlign: "center", padding: "32px 0", color: C.text3 }}>
+              <div style={{ fontSize: 40, marginBottom: 10, animation: "pulse 1.5s infinite" }}>🧠</div>
+              <div style={{ fontSize: 14 }}>Data wordt geanalyseerd</div>
             </div>
           )}
 
@@ -1252,14 +1359,6 @@ export default function App() {
                   </div>
                 );
               })}
-            </div>
-          )}
-
-          {!coaching && !coachLoad && (
-            <div style={{ textAlign: "center", padding: "48px 20px" }}>
-              <div style={{ width: 72, height: 72, borderRadius: "50%", background: C.blue+"15", margin: "0 auto 16px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32 }}>✦</div>
-              <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6 }}>Klaar voor analyse</div>
-              <div style={{ fontSize: 15, color: C.text3 }}>Druk op "Coach mij nu" voor persoonlijk advies.</div>
             </div>
           )}
         </div>
@@ -1363,7 +1462,7 @@ export default function App() {
           const below = sleep7.filter(v => v < 7.5).length;
           const sleepAvg = sleep7.reduce((a,b)=>a+b,0)/sleep7.length;
           insights.push({ icon: "🌙", color: below<=1?C.green:below<=3?C.orange:C.red,
-            title: below===0 ? "Slaap op schema" : `${below}× onder slaapдoel`,
+            title: below===0 ? "Slaap op schema" : `${below}× onder slaapdoel`,
             body: `Gemiddeld ${sleepAvg.toFixed(1)}u · doel 7.5u · ${sleep7.length-below} van ${sleep7.length} nachten gehaald.` });
         }
 
