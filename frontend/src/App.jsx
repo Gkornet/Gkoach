@@ -281,6 +281,48 @@ const TASK_DETAILS = {
 };
 
 // ── Coaching ──────────────────────────────────────────────────────────────────
+async function fetchDailyTip({ todayData, contextData, plan, planned, readiness }) {
+  const now = new Date();
+  const hour = now.getHours();
+  const timeLabel = hour < 9 ? "vroege ochtend" : hour < 12 ? "ochtend" : hour < 14 ? "middag" : hour < 17 ? "namiddag" : hour < 20 ? "avond" : "late avond";
+
+  const pending = plan.filter(t => !t.done).map(t => t.label);
+  const done    = plan.filter(t => t.done).map(t => t.label);
+  const todayWorkout = planned.find(p => p.date === today());
+
+  const metrics = contextData ? [
+    contextData.hrv        && `HRV ${contextData.hrv}ms`,
+    contextData.sleep_h    && `slaap ${contextData.sleep_h}u`,
+    contextData.body_battery && `battery ${contextData.body_battery}%`,
+    contextData.stress     && `stress ${contextData.stress}`,
+  ].filter(Boolean).join(", ") : "geen data";
+
+  const prompt = `Je bent een personal coach. Geef één concreet advies voor dit moment.
+
+TIJDSTIP: ${timeLabel} (${hour}:${String(now.getMinutes()).padStart(2,"0")})
+READINESS SCORE: ${readiness ?? "onbekend"}
+BIOMETRICS VANDAAG: ${metrics}
+AL GEDAAN VANDAAG: ${done.length ? done.join(", ") : "nog niets"}
+NOG TE DOEN: ${pending.length ? pending.join(", ") : "alles gedaan"}
+GEPLANDE WORKOUT VANDAAG: ${todayWorkout ? `${todayWorkout.title} (${todayWorkout.sport})` : "geen gepland"}
+WEDSTRIJDEN: 10km Noordwijk 5 juli 2026 · Gym-race Utrecht 4 oktober 2026
+
+Geef één tip van maximaal 2 zinnen. Geen opsommingstekens. Geen headers. Geen opmaak. Gewoon een directe, persoonlijke zin die nu het meest relevant is — gebaseerd op het tijdstip en wat er nog op de planning staat. Spreek de gebruiker direct aan met "je/jij".`;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": CLAUDE_KEY,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 120, messages: [{ role: "user", content: prompt }] })
+  });
+  const d = await res.json();
+  return d.content?.find(b => b.type === "text")?.text?.trim() || "";
+}
+
 async function fetchCoaching(entries, question) {
   const recent = entries.slice(-7);
   const todayStr = today();
@@ -494,8 +536,10 @@ export default function App() {
   const [syncing,   setSyncing]   = useState(false);
   const [tab,       setTab]       = useState("vandaag");
   const [entry,     setEntry]     = useState({ ...EMPTY, date: today() });
-  const [coaching,  setCoaching]  = useState("");
-  const [coachLoad, setCoachLoad] = useState(false);
+  const [coaching,    setCoaching]    = useState("");
+  const [coachLoad,   setCoachLoad]   = useState(false);
+  const [dailyTip,    setDailyTip]    = useState("");
+  const [dailyTipLoad,setDailyTipLoad]= useState(false);
   const [question,  setQuestion]  = useState("");
   const [saveMsg,   setSaveMsg]   = useState("");
   const [sheetMode, setSheetMode] = useState(!!SHEET_ID);
@@ -622,6 +666,18 @@ export default function App() {
     setCoachLoad(false);
   };
 
+  const runDailyTip = useCallback(async (planArg, plannedArg, readinessArg, todayDataArg, contextDataArg) => {
+    const cacheKey = `daily_tip_${today()}_${new Date().getHours()}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) { setDailyTip(cached); return; }
+    setDailyTipLoad(true);
+    try {
+      const tip = await fetchDailyTip({ todayData: todayDataArg, contextData: contextDataArg, plan: planArg, planned: plannedArg, readiness: readinessArg });
+      if (tip) { setDailyTip(tip); localStorage.setItem(cacheKey, tip); }
+    } catch { /* stil falen */ }
+    setDailyTipLoad(false);
+  }, []);
+
   const set = (k, v) => setEntry(p => ({ ...p, [k]: v }));
 
   const last        = entries[entries.length - 1];
@@ -649,6 +705,13 @@ export default function App() {
 
   const hour = new Date().getHours();
   const greeting = hour < 6 ? "Goedenacht" : hour < 12 ? "Goedemorgen" : hour < 18 ? "Goedemiddag" : "Goedenavond";
+
+  // Auto-fetch daily tip when on vandaag tab + today + data loaded
+  useEffect(() => {
+    if (tab === "vandaag" && isToday && !loading && CLAUDE_KEY && entries.length > 0) {
+      runDailyTip(plan, planned, readiness, displayEntry, contextEntry);
+    }
+  }, [tab, isToday, loading, entries.length, planDone]); // eslint-disable-line
 
   const TABS = [
     { id: "vandaag",  icon: "house",    label: "Vandaag"  },
@@ -865,6 +928,26 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            {/* Daily tip */}
+            {isToday && CLAUDE_KEY && (dailyTip || dailyTipLoad) && (
+              <div style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 12, display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <div style={{ fontSize: 22, flexShrink: 0, marginTop: 1 }}>
+                  {hour < 9 ? "☀️" : hour < 14 ? "⚡" : hour < 19 ? "🎯" : "🌙"}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.blue, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Coach advies</div>
+                  {dailyTipLoad
+                    ? <div style={{ height: 14, background: C.fill, borderRadius: 7, width: "80%", animation: "pulse 1.5s ease-in-out infinite" }} />
+                    : <div style={{ fontSize: 14, color: C.text, lineHeight: 1.55 }}>{dailyTip}</div>
+                  }
+                </div>
+                {!dailyTipLoad && (
+                  <button onClick={() => { localStorage.removeItem(`daily_tip_${today()}_${new Date().getHours()}`); runDailyTip(plan, planned, readiness, displayEntry, contextEntry); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, fontSize: 13, padding: "2px 0", flexShrink: 0, marginTop: 2 }}>↻</button>
+                )}
+              </div>
+            )}
 
             {/* Daily plan */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
