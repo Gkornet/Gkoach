@@ -259,12 +259,13 @@ const TASK_DETAILS = {
     title: "Dagelijkse check-in",
     steps: [
       { icon: "⚖", text: "Weeg jezelf — bij voorkeur 's ochtends na het toilet, voor het eten." },
-      { icon: "⚡", text: "Beoordeel je energieniveau: 1–10. Eerlijk en intuïtief." },
       { icon: "🫀", text: "Bloeddruk meten als je een manchet hebt — ideaal <120/80 mmHg." },
-      { icon: "📝", text: "Noteer iets opmerkelijks: stress, voeding, pijn, gevoel." },
-      { icon: "💾", text: "Sla op — data wordt naar Google Sheets geschreven." },
+      { icon: "😊", text: "Geef aan hoe je je voelt — van slecht tot top." },
+      { icon: "☕", text: "Noteer je koffie en alcohol — helpt patronen in slaap en HRV zichtbaar maken." },
+      { icon: "📝", text: "Optioneel: schrijf iets bijzonders op in notities." },
     ],
     tip: "Dagelijkse check-ins bouwen over weken een patroon op. De AI-coach gebruikt deze data voor persoonlijk advies.",
+    action: "invullen",
   },
   sleep: {
     title: "Slaapvoorbereiding",
@@ -793,6 +794,21 @@ export default function App() {
               setTaskDetail(null);
             };
 
+            // Checkin task: navigate to invullen tab instead of generic markeer
+            if (detail?.action === "invullen") {
+              return isDone ? (
+                <div style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 10, background: C.green + "15", borderRadius: 12, padding: "12px 16px" }}>
+                  <span style={{ fontSize: 18 }}>✅</span>
+                  <span style={{ fontSize: 15, color: C.green, fontWeight: 600 }}>Ingevuld vandaag · Opgeslagen in Sheets</span>
+                </div>
+              ) : (
+                <button onClick={() => { setTaskDetail(null); setTab("checkin"); }}
+                  style={{ marginTop: 20, width: "100%", background: taskDetail.color, color: "#fff", border: "none", borderRadius: 14, padding: "14px", fontSize: 16, fontWeight: 600, cursor: "pointer" }}>
+                  Ga naar invullen →
+                </button>
+              );
+            }
+
             return isDone ? (
               <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.green + "15", borderRadius: 12, padding: "12px 16px" }}>
@@ -929,26 +945,6 @@ export default function App() {
               </div>
             </div>
 
-            {/* Daily tip */}
-            {isToday && CLAUDE_KEY && (dailyTip || dailyTipLoad) && (
-              <div style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 12, display: "flex", gap: 12, alignItems: "flex-start" }}>
-                <div style={{ fontSize: 22, flexShrink: 0, marginTop: 1 }}>
-                  {hour < 9 ? "☀️" : hour < 14 ? "⚡" : hour < 19 ? "🎯" : "🌙"}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: C.blue, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Coach advies</div>
-                  {dailyTipLoad
-                    ? <div style={{ height: 14, background: C.fill, borderRadius: 7, width: "80%", animation: "pulse 1.5s ease-in-out infinite" }} />
-                    : <div style={{ fontSize: 14, color: C.text, lineHeight: 1.55 }}>{dailyTip}</div>
-                  }
-                </div>
-                {!dailyTipLoad && (
-                  <button onClick={() => { localStorage.removeItem(`daily_tip_${today()}_${new Date().getHours()}`); runDailyTip(plan, planned, readiness, displayEntry, contextEntry); }}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, fontSize: 13, padding: "2px 0", flexShrink: 0, marginTop: 2 }}>↻</button>
-                )}
-              </div>
-            )}
-
             {/* Daily plan */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
               <div style={{ fontSize: 17, fontWeight: 600 }}>Plan voor vandaag</div>
@@ -1053,6 +1049,26 @@ export default function App() {
                 </div>
               );
             })()}
+
+            {/* Coach tip — boven trainingsplan */}
+            {isToday && CLAUDE_KEY && (dailyTip || dailyTipLoad) && (
+              <div style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 12, display: "flex", gap: 12, alignItems: "flex-start" }}>
+                <div style={{ fontSize: 22, flexShrink: 0, marginTop: 1 }}>
+                  {hour < 9 ? "☀️" : hour < 14 ? "⚡" : hour < 19 ? "🎯" : "🌙"}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: C.blue, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>Coach advies</div>
+                  {dailyTipLoad
+                    ? <div style={{ height: 14, background: C.fill, borderRadius: 7, width: "80%", animation: "pulse 1.5s ease-in-out infinite" }} />
+                    : <div style={{ fontSize: 14, color: C.text, lineHeight: 1.55 }}>{dailyTip}</div>
+                  }
+                </div>
+                {!dailyTipLoad && (
+                  <button onClick={() => { localStorage.removeItem(`daily_tip_${today()}_${new Date().getHours()}`); runDailyTip(plan, planned, readiness, displayEntry, contextEntry); }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, fontSize: 13, padding: "2px 0", flexShrink: 0, marginTop: 2 }}>↻</button>
+                )}
+              </div>
+            )}
 
             {/* Geplande trainingen uit Garmin coach plan */}
             {planned.length > 0 && (() => {
