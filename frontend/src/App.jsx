@@ -73,9 +73,11 @@ const HEADERS = [
 // Plan item → entry field mapping (for auto-save)
 const PLAN_FIELD = { breathing: "breathing", sleep: "sleep_prep" };
 
-const today     = () => new Date().toISOString().slice(0, 10);
+const today     = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const fmt       = (d) => new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
-const numArr    = (entries, f) => entries.map(e => parseFloat(e[f])).filter(v => !isNaN(v) && v > 0);
+// Sheets can return "5,52" (Dutch locale) or "5.52" — handle both
+const parseNum  = (v) => { if (v === "" || v == null) return NaN; return parseFloat(String(v).replace(",", ".")); };
+const numArr    = (entries, f) => entries.map(e => parseNum(e[f])).filter(v => !isNaN(v) && v > 0);
 const avg       = (arr) => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : "—";
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date()) / 86400000);
 const isTrue    = (v) => v === true || v === "true" || v === "TRUE" || v === 1 || v === "1";
@@ -88,23 +90,21 @@ function calcReadiness(last, entries) {
   const avgHrv  = hrvVals.length > 3 ? hrvVals.slice(-14).reduce((a,b)=>a+b,0)/Math.min(hrvVals.length,14) : 50;
   let score = 50, n = 0;
 
-  if (last.hrv) {
-    const ratio = +last.hrv / avgHrv;
-    score += (ratio - 1) * 40;
-    n++;
+  const hrv = parseNum(last.hrv), sleepH = parseNum(last.sleep_h);
+  const stress = parseNum(last.stress), battery = parseNum(last.body_battery);
+  if (!isNaN(hrv) && hrv > 0) {
+    score += (hrv / avgHrv - 1) * 40; n++;
   }
-  if (last.sleep_h) {
-    const s = Math.min(+last.sleep_h / 8, 1.1);
-    score += (s - 0.875) * 30;
-    n++;
+  if (!isNaN(sleepH) && sleepH > 0) {
+    score += (Math.min(sleepH / 8, 1.1) - 0.875) * 30; n++;
   }
-  if (last.stress) {
-    score -= (+last.stress - 5) * 3;
-    n++;
+  if (!isNaN(stress) && stress > 0) {
+    // Garmin stress is 0–100, normalize to 0–10 range
+    const s10 = stress > 10 ? stress / 10 : stress;
+    score -= (s10 - 5) * 3; n++;
   }
-  if (last.body_battery) {
-    score += (+last.body_battery - 50) * 0.3;
-    n++;
+  if (!isNaN(battery) && battery > 0) {
+    score += (battery - 50) * 0.3; n++;
   }
   return Math.max(0, Math.min(100, Math.round(score)));
 }
@@ -145,14 +145,27 @@ function getDailyPlan(last, entries) {
     trainTask = { icon: "🚶", label: "Actief herstel", sub: "30 min wandeling of mobiliteitswerk", color: C.green, cat: "Training" };
   }
 
-  // Slaap: toon gisteravond's werkelijke slaap vs doel
-  const SLEEP_GOAL = 7.5;
-  const sleepActual = last?.sleep_h ? +last.sleep_h : null;
+  // Slaap: bedtijd terugrekenen vanuit 6:30 wekker
+  const WAKE_H = 6, WAKE_M = 30;           // wekker 06:30
+  const SLEEP_GOAL = 7.5;                  // doel slaap in uren
+  const FALL_ASLEEP_MIN = 15;              // inslaaptijd
+  const totalBedMin = SLEEP_GOAL * 60 + FALL_ASLEEP_MIN;   // 465 min
+  const bedH = Math.floor(((WAKE_H * 60 + WAKE_M) - totalBedMin + 1440) % 1440 / 60);
+  const bedM = ((WAKE_H * 60 + WAKE_M) - totalBedMin + 1440) % 60;
+  const bedTime = `${bedH}:${String(bedM).padStart(2, "0")}`;          // "23:00" ish... wait let's calc
+  // 6:30 = 390 min. 390 - 465 = -75 → +1440 = 1365 min = 22:45
+  // bedH = floor(1365/60) = 22, bedM = 1365%60 = 45 → 22:45
+  const screenOffMin = ((WAKE_H * 60 + WAKE_M) - totalBedMin - 15 + 1440) % 1440; // 15 min buffer
+  const screenOffH = Math.floor(screenOffMin / 60);
+  const screenOffM = screenOffMin % 60;
+  const screenOff = `${screenOffH}:${String(screenOffM).padStart(2, "0")}`;
+
+  const sleepActual = !isNaN(parseNum(last?.sleep_h)) ? parseNum(last.sleep_h) : null;
   const sleepDone = sleepActual !== null && sleepActual >= SLEEP_GOAL;
   const sleepPrepped = isTrue(last?.sleep_prep);
   const sleepSub = sleepActual !== null
-    ? `Gisteren: ${sleepActual}u slaap · doel ${SLEEP_GOAL}u · schermen weg 22:00`
-    : `Doel ${SLEEP_GOAL}u slaap · schermen weg 22:00`;
+    ? `Gisteren ${sleepActual}u · doel ${SLEEP_GOAL}u · bed om ${bedTime}`
+    : `Schermen weg ${screenOff} · in bed om ${bedTime} · wekker 06:30`;
 
   return [
     { id: "morning", cat: "Ochtend", icon: "🌅", label: "Ochtendmeting", sub: "HRV & body battery ophalen via Garmin", color: C.blue, auto: true, done: !!last?.hrv },
@@ -223,14 +236,14 @@ const TASK_DETAILS = {
   sleep: {
     title: "Slaapvoorbereiding",
     steps: [
-      { icon: "📵", text: "22:00 — schermen uit of op nachtmodus. Blauw licht onderdrukt melatonine." },
-      { icon: "🌡", text: "Zet de slaapkamer koel: 16–19°C is optimaal voor diepe slaap." },
-      { icon: "📖", text: "10 min lezen of journalen — vermindert piekergedachten." },
-      { icon: "🌬", text: "4-7-8 ademhaling: in 4, vasthouden 7, uit 8. Doe 4 ronden." },
-      { icon: "⌚", text: "Laat je Garmin aan — de sleep tracking start automatisch." },
-      { icon: "🎯", text: "Doel: 7,5 uur in bed. Garmin registreert diepe slaap, REM en HRV." },
+      { icon: "📵", text: "22:30 — schermen uit of op nachtmodus. Blauw licht remt melatonine 1–2 uur." },
+      { icon: "🛏", text: "In bed om 22:45. Wekker staat op 06:30 → geeft je 7,5u slaap + inslaaptijd." },
+      { icon: "🌡", text: "Slaapkamer koel: 16–19°C is optimaal voor diepe slaap en HRV herstel." },
+      { icon: "📖", text: "10 min lezen of journalen — zet gedachten van de dag neer, ruimte je hoofd leeg." },
+      { icon: "🌬", text: "4-7-8 ademhaling: inademen 4 tellen · vasthouden 7 · uitademen 8. Doe 4 ronden." },
+      { icon: "⌚", text: "Laat je Garmin aan — sleep tracking start automatisch, HRV wordt 's nachts gemeten." },
     ],
-    tip: "De uren voor middernacht tellen het zwaarst voor herstel. Eerder slapen verhoogt je diepe slaappercentage significant.",
+    tip: "Slaap vóór middernacht telt zwaarder voor herstel. Om 22:45 slapen geeft meer diepe slaap dan om 00:45 — zelfs met dezelfde totale duur.",
   },
 };
 
@@ -357,7 +370,8 @@ export default function App() {
   const [saveMsg,   setSaveMsg]   = useState("");
   const [sheetMode, setSheetMode] = useState(!!SHEET_ID);
   const [planDone,  setPlanDone]  = useState({});
-  const [taskDetail, setTaskDetail] = useState(null); // task object or null
+  const [taskDetail, setTaskDetail] = useState(null);
+  const [viewDate,  setViewDate]  = useState(today());
 
   const loadData = useCallback(async () => {
     if (!sheetMode) {
@@ -452,12 +466,21 @@ export default function App() {
 
   const set = (k, v) => setEntry(p => ({ ...p, [k]: v }));
 
-  const last      = entries[entries.length - 1];
+  const last       = entries[entries.length - 1];
   const todayEntry = entries.find(e => e.date === today());
+  // viewDate navigation
+  const sortedDates = entries.map(e => e.date).sort();
+  const viewEntry   = entries.find(e => e.date === viewDate) || (viewDate === today() ? null : undefined);
+  const displayEntry = viewDate === today() ? (todayEntry || last) : viewEntry;
+  const viewIdx     = sortedDates.indexOf(viewDate);
+  const prevDate    = viewIdx > 0 ? sortedDates[viewIdx - 1] : null;
+  const nextDate    = viewIdx < sortedDates.length - 1 ? sortedDates[viewIdx + 1] : (viewDate !== today() ? today() : null);
+  const isToday     = viewDate === today();
+
   const race1     = daysUntil("2026-07-05");
   const race2     = daysUntil("2026-10-04");
-  const readiness = calcReadiness(todayEntry || last, entries);
-  const plan      = getDailyPlan(todayEntry || last, entries);
+  const readiness = calcReadiness(displayEntry, entries);
+  const plan      = getDailyPlan(displayEntry, entries);
   const doneTasks = plan.filter(t => t.done || planDone[t.id]).length;
 
   const hour = new Date().getHours();
@@ -593,113 +616,127 @@ export default function App() {
       {/* ── VANDAAG ── */}
       {tab === "vandaag" && (
         <div className="fade" style={{ paddingBottom: 90 }}>
-          {/* Hero header */}
-          <div style={{ background: C.card, padding: "56px 20px 24px" }}>
+          {/* Header with date navigation */}
+          <div style={{ background: C.card, padding: "56px 20px 16px", borderBottom: `1px solid ${C.border}` }}>
             <div style={{ maxWidth: 640, margin: "0 auto" }}>
-              <div style={{ fontSize: 15, color: C.text3, marginBottom: 2 }}>{greeting}</div>
-              <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px", marginBottom: 20 }}>Jouw dag vandaag</div>
-
-              <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-                {/* Readiness ring */}
-                <div style={{ position: "relative", flexShrink: 0 }}>
-                  <Ring value={readiness ?? 0} color={readiness ? readinessColor(readiness) : C.text3} size={110} stroke={10} />
-                  <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                    <div style={{ fontSize: 26, fontWeight: 700, color: readiness ? readinessColor(readiness) : C.text3, lineHeight: 1 }}>{readiness ?? "—"}</div>
-                    <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>{readiness ? readinessLabel(readiness) : "Geen data"}</div>
+              <div style={{ fontSize: 13, color: C.text3, marginBottom: 2 }}>{isToday ? greeting : ""}</div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                <button onClick={() => prevDate && setViewDate(prevDate)} style={{ width: 32, height: 32, borderRadius: 16, background: prevDate ? C.fill : "transparent", border: "none", cursor: prevDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {prevDate && <svg width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M7 1L2 6.5 7 12" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </button>
+                <div style={{ textAlign: "center" }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.3px" }}>
+                    {isToday ? "Vandaag" : fmt(viewDate)}
                   </div>
+                  {!isToday && <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>{viewDate}</div>}
                 </div>
-
-                {/* Today's key metrics */}
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {[
-                    { l: "HRV",    v: (todayEntry||last)?.hrv,          u: "ms",  c: C.green  },
-                    { l: "Slaap",  v: (todayEntry||last)?.sleep_h,      u: "uur", c: C.indigo },
-                    { l: "Stress", v: (todayEntry||last)?.stress,        u: "/10", c: C.orange },
-                    { l: "Batt.",  v: (todayEntry||last)?.body_battery,  u: "%",   c: C.teal   },
-                  ].map(m => (
-                    <div key={m.l} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 13, color: C.text3 }}>{m.l}</span>
-                      <span style={{ fontSize: 15, fontWeight: 600, color: m.v ? m.c : C.text3 }}>
-                        {m.v || "—"}{m.v ? <span style={{ fontSize: 11, fontWeight: 400, color: C.text3 }}> {m.u}</span> : ""}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Race pills */}
-              <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
-                <div style={{ flex: 1, background: C.green + "15", borderRadius: 12, padding: "10px 14px" }}>
-                  <div style={{ fontSize: 11, color: C.green, fontWeight: 600 }}>10K Noordwijk</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: C.green }}>{race1} <span style={{ fontSize: 13, fontWeight: 400 }}>dagen</span></div>
-                </div>
-                <div style={{ flex: 1, background: C.blue + "15", borderRadius: 12, padding: "10px 14px" }}>
-                  <div style={{ fontSize: 11, color: C.blue, fontWeight: 600 }}>Gym-race Utrecht</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, color: C.blue }}>{race2} <span style={{ fontSize: 13, fontWeight: 400 }}>dagen</span></div>
-                </div>
+                <button onClick={() => nextDate && setViewDate(nextDate)} style={{ width: 32, height: 32, borderRadius: 16, background: nextDate ? C.fill : "transparent", border: "none", cursor: nextDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {nextDate && <svg width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M1 1l6 5.5L1 12" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                </button>
               </div>
             </div>
           </div>
 
-          {/* Daily plan */}
-          <div style={{ maxWidth: 640, margin: "0 auto", padding: "20px 16px 0" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-              <div style={{ fontSize: 20, fontWeight: 700 }}>Dagschema</div>
-              <div style={{ fontSize: 13, color: C.text3 }}>{doneTasks}/{plan.length} klaar</div>
+          <div style={{ maxWidth: 640, margin: "0 auto", padding: "16px 16px 0" }}>
+
+            {/* Readiness card */}
+            <div style={{ background: C.card, borderRadius: 16, padding: "20px", marginBottom: 12, display: "flex", alignItems: "center", gap: 20 }}>
+              <div style={{ position: "relative", flexShrink: 0 }}>
+                <Ring value={readiness != null && !isNaN(readiness) ? readiness : 0} color={readiness != null && !isNaN(readiness) ? readinessColor(readiness) : C.text3} size={96} stroke={9} />
+                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: readiness != null && !isNaN(readiness) ? readinessColor(readiness) : C.text3, lineHeight: 1 }}>{readiness != null && !isNaN(readiness) ? readiness : "—"}</div>
+                  <div style={{ fontSize: 10, color: C.text3, marginTop: 1 }}>{readiness != null && !isNaN(readiness) ? readinessLabel(readiness) : "Geen data"}</div>
+                </div>
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Readiness</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
+                  {[
+                    { l: "HRV",    v: displayEntry?.hrv,          u: " ms",  c: C.green  },
+                    { l: "Slaap",  v: displayEntry?.sleep_h,      u: " u",   c: C.indigo },
+                    { l: "Stress", v: displayEntry?.stress,        u: "",     c: C.orange },
+                    { l: "Battery",v: displayEntry?.body_battery,  u: "%",    c: C.teal   },
+                  ].map(m => {
+                    const val = parseNum(m.v);
+                    return (
+                      <div key={m.l} style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 12, color: C.text3 }}>{m.l}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: !isNaN(val) ? m.c : C.text3 }}>{!isNaN(val) ? `${m.v}${m.u}` : "—"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
 
-            {/* Progress bar */}
-            <div style={{ height: 4, background: C.fill, borderRadius: 2, marginBottom: 16, overflow: "hidden" }}>
+            {/* Race countdowns */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+              <div style={{ flex: 1, background: C.card, borderRadius: 14, padding: "14px 16px" }}>
+                <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>10K Noordwijk</div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: C.green, lineHeight: 1 }}>{race1}</div>
+                <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>dagen</div>
+              </div>
+              <div style={{ flex: 1, background: C.card, borderRadius: 14, padding: "14px 16px" }}>
+                <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>Gym-race Utrecht</div>
+                <div style={{ fontSize: 26, fontWeight: 700, color: C.blue, lineHeight: 1 }}>{race2}</div>
+                <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>dagen</div>
+              </div>
+            </div>
+
+            {/* Daily plan */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+              <div style={{ fontSize: 17, fontWeight: 600 }}>Plan voor vandaag</div>
+              <div style={{ fontSize: 13, color: C.text3 }}>{doneTasks}/{plan.length}</div>
+            </div>
+            <div style={{ height: 3, background: C.fill, borderRadius: 2, marginBottom: 12, overflow: "hidden" }}>
               <div style={{ height: "100%", width: `${(doneTasks/plan.length)*100}%`, background: C.green, borderRadius: 2, transition: "width 0.4s ease" }} />
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <div style={{ background: C.card, borderRadius: 16, overflow: "hidden", marginBottom: 12 }}>
               {plan.map((task, i) => {
                 const done = task.done || !!planDone[task.id];
                 return (
                   <div key={task.id} onClick={() => setTaskDetail({ ...task, done })}
                     style={{
-                      background: C.card, borderRadius: i === 0 ? "14px 14px 4px 4px" : i === plan.length-1 ? "4px 4px 14px 14px" : 4,
                       padding: "14px 16px", display: "flex", alignItems: "center", gap: 14,
-                      cursor: "pointer", opacity: done ? 0.6 : 1,
-                      transition: "opacity 0.2s"
+                      cursor: "pointer",
+                      borderBottom: i < plan.length - 1 ? `1px solid ${C.border}` : "none",
                     }}>
+                    {/* Check circle */}
                     <div style={{
-                      width: 42, height: 42, borderRadius: 12, flexShrink: 0,
-                      background: done ? C.fill : task.color + "18",
-                      display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20
+                      width: 28, height: 28, borderRadius: 14, flexShrink: 0,
+                      background: done ? task.color : "transparent",
+                      border: done ? "none" : `2px solid ${C.border}`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
                     }}>
-                      {done ? "✓" : task.icon}
+                      {done && <svg width="14" height="11" viewBox="0 0 14 11" fill="none"><path d="M1 5l4 4 8-8" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: done ? C.text3 : C.text, textDecoration: done ? "line-through" : "none" }}>{task.label}</div>
-                      <div style={{ fontSize: 13, color: C.text3, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{task.sub}</div>
+                      <div style={{ fontSize: 15, fontWeight: 500, color: done ? C.text3 : C.text, textDecoration: done ? "line-through" : "none" }}>{task.label}</div>
+                      <div style={{ fontSize: 12, color: C.text3, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{task.sub}</div>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                      <div style={{ fontSize: 11, color: task.color, fontWeight: 600, background: task.color + "15", padding: "3px 8px", borderRadius: 20 }}>{task.cat}</div>
-                      <svg width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M1 1l6 5.5L1 12" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
-                    </div>
+                    <svg width="7" height="12" viewBox="0 0 7 12" fill="none"><path d="M1 1l5 5-5 5" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                   </div>
                 );
               })}
             </div>
 
-            {/* Latest run stats if available */}
-            {last?.avg_pace && (
-              <div style={{ marginTop: 20 }}>
-                <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 12 }}>Laatste training</div>
-                <div style={{ background: C.card, borderRadius: 14, padding: 16, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            {/* Run stats for displayed entry */}
+            {displayEntry?.avg_pace && (
+              <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 12 }}>
+                <div style={{ fontSize: 13, color: C.text3, fontWeight: 600, marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.04em" }}>Hardlooptraining</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
                   {[
-                    { l: "Tempo",     v: last.avg_pace,       u: "/km"  },
-                    { l: "Cadans",    v: last.cadence,        u: "spm"  },
-                    { l: "Afstand",   v: last.train_dist,     u: "km"   },
-                    { l: "GCT",       v: last.ground_contact, u: "ms"   },
-                    { l: "V. Osc.",   v: last.vertical_osc,   u: "cm"   },
-                    { l: "HR gem.",   v: last.avg_hr,         u: "bpm"  },
+                    { l: "Tempo",   v: displayEntry.avg_pace,       u: "/km" },
+                    { l: "Cadans",  v: displayEntry.cadence,        u: "spm" },
+                    { l: "Afstand", v: displayEntry.train_dist,     u: "km"  },
+                    { l: "GCT",     v: displayEntry.ground_contact, u: "ms"  },
+                    { l: "V. Osc.", v: displayEntry.vertical_osc,   u: "cm"  },
+                    { l: "HR gem.", v: displayEntry.avg_hr,         u: "bpm" },
                   ].filter(m => m.v).map(m => (
                     <div key={m.l} style={{ textAlign: "center" }}>
                       <div style={{ fontSize: 11, color: C.text3, marginBottom: 3 }}>{m.l}</div>
-                      <div style={{ fontSize: 17, fontWeight: 700 }}>{m.v}<span style={{ fontSize: 10, color: C.text3, fontWeight: 400 }}> {m.u}</span></div>
+                      <div style={{ fontSize: 16, fontWeight: 700 }}>{m.v}<span style={{ fontSize: 10, color: C.text3, fontWeight: 400 }}> {m.u}</span></div>
                     </div>
                   ))}
                 </div>
@@ -707,7 +744,7 @@ export default function App() {
             )}
 
             {!sheetMode && (
-              <div style={{ marginTop: 16, background: C.orange + "15", borderRadius: 12, padding: "12px 16px", fontSize: 13, color: C.orange }}>
+              <div style={{ background: C.orange + "15", borderRadius: 12, padding: "12px 16px", fontSize: 13, color: C.orange }}>
                 Lokale modus — configureer Google Sheets via Meer → Instellingen.
               </div>
             )}
