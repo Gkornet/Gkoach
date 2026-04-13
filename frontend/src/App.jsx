@@ -680,24 +680,22 @@ export default function App() {
           {/* Header */}
           <div style={{ background: C.card, padding: "52px 20px 16px", borderBottom: `1px solid ${C.border}` }}>
             <div style={{ maxWidth: 640, margin: "0 auto" }}>
-              {isToday && (
-                <div style={{ fontSize: 13, color: C.text3, marginBottom: 4 }}>{greeting}</div>
-              )}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <button onClick={() => prevDate && setViewDate(prevDate)}
-                  style={{ width: 36, height: 36, borderRadius: 18, background: "transparent", border: "none", cursor: prevDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", opacity: prevDate ? 1 : 0 }}>
+                  style={{ width: 36, height: 36, borderRadius: 18, background: "transparent", border: "none", cursor: prevDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", opacity: prevDate ? 1 : 0, flexShrink: 0 }}>
                   <svg width="9" height="15" viewBox="0 0 9 15" fill="none"><path d="M8 1L2 7.5 8 14" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
-                <div style={{ textAlign: "center" }}>
+                <div style={{ textAlign: "center", flex: 1 }}>
                   <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.5px", lineHeight: 1.2 }}>
-                    {isToday ? new Date().toLocaleDateString("nl-NL", { weekday: "long" }).replace(/^\w/, c => c.toUpperCase()) : new Date(effectiveViewDate + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long" }).replace(/^\w/, c => c.toUpperCase())}
+                    {new Date(effectiveViewDate + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long" }).replace(/^\w/, c => c.toUpperCase())}
                   </div>
-                  <div style={{ fontSize: 14, color: C.text3, marginTop: 2 }}>
-                    {new Date((isToday ? today() : effectiveViewDate) + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })}
+                  <div style={{ fontSize: 13, color: C.text3, marginTop: 2 }}>
+                    {new Date(effectiveViewDate + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })}
                   </div>
+                  {isToday && <div style={{ fontSize: 12, color: C.blue, marginTop: 3, fontWeight: 500 }}>{greeting}</div>}
                 </div>
                 <button onClick={() => nextDate && setViewDate(nextDate)}
-                  style={{ width: 36, height: 36, borderRadius: 18, background: "transparent", border: "none", cursor: nextDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", opacity: nextDate ? 1 : 0 }}>
+                  style={{ width: 36, height: 36, borderRadius: 18, background: "transparent", border: "none", cursor: nextDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", opacity: nextDate ? 1 : 0, flexShrink: 0 }}>
                   <svg width="9" height="15" viewBox="0 0 9 15" fill="none"><path d="M1 1l6 6.5L1 14" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
               </div>
