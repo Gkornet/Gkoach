@@ -466,16 +466,17 @@ export default function App() {
 
   const set = (k, v) => setEntry(p => ({ ...p, [k]: v }));
 
-  const last       = entries[entries.length - 1];
-  const todayEntry = entries.find(e => e.date === today());
-  // viewDate navigation
-  const sortedDates = entries.map(e => e.date).sort();
-  const viewEntry   = entries.find(e => e.date === viewDate) || (viewDate === today() ? null : undefined);
-  const displayEntry = viewDate === today() ? (todayEntry || last) : viewEntry;
-  const viewIdx     = sortedDates.indexOf(viewDate);
+  const last        = entries[entries.length - 1];
+  const todayEntry  = entries.find(e => e.date === today());
+  // Navigation: always navigate through actual entry dates only
+  const sortedDates = [...new Set(entries.map(e => e.date))].sort();
+  // viewDate must be one of the available dates; default to last available
+  const effectiveViewDate = sortedDates.includes(viewDate) ? viewDate : (sortedDates[sortedDates.length - 1] || today());
+  const displayEntry = entries.find(e => e.date === effectiveViewDate) || last;
+  const viewIdx     = sortedDates.indexOf(effectiveViewDate);
   const prevDate    = viewIdx > 0 ? sortedDates[viewIdx - 1] : null;
-  const nextDate    = viewIdx < sortedDates.length - 1 ? sortedDates[viewIdx + 1] : (viewDate !== today() ? today() : null);
-  const isToday     = viewDate === today();
+  const nextDate    = viewIdx < sortedDates.length - 1 ? sortedDates[viewIdx + 1] : null;
+  const isToday     = effectiveViewDate === today();
 
   const race1     = daysUntil("2026-07-05");
   const race2     = daysUntil("2026-10-04");
@@ -621,17 +622,19 @@ export default function App() {
             <div style={{ maxWidth: 640, margin: "0 auto" }}>
               <div style={{ fontSize: 13, color: C.text3, marginBottom: 2 }}>{isToday ? greeting : ""}</div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <button onClick={() => prevDate && setViewDate(prevDate)} style={{ width: 32, height: 32, borderRadius: 16, background: prevDate ? C.fill : "transparent", border: "none", cursor: prevDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {prevDate && <svg width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M7 1L2 6.5 7 12" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                <button onClick={() => prevDate && setViewDate(prevDate)} style={{ width: 36, height: 36, borderRadius: 18, background: prevDate ? C.fill : "transparent", border: "none", cursor: prevDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {prevDate && <svg width="9" height="14" viewBox="0 0 9 14" fill="none"><path d="M8 1L2 7l6 6" stroke={C.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                 </button>
                 <div style={{ textAlign: "center" }}>
                   <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.3px" }}>
-                    {isToday ? "Vandaag" : fmt(viewDate)}
+                    {isToday ? "Vandaag" : fmt(effectiveViewDate)}
                   </div>
-                  {!isToday && <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>{viewDate}</div>}
+                  <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
+                    {isToday ? new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" }) : effectiveViewDate}
+                  </div>
                 </div>
-                <button onClick={() => nextDate && setViewDate(nextDate)} style={{ width: 32, height: 32, borderRadius: 16, background: nextDate ? C.fill : "transparent", border: "none", cursor: nextDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {nextDate && <svg width="8" height="13" viewBox="0 0 8 13" fill="none"><path d="M1 1l6 5.5L1 12" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                <button onClick={() => nextDate && setViewDate(nextDate)} style={{ width: 36, height: 36, borderRadius: 18, background: nextDate ? C.fill : "transparent", border: "none", cursor: nextDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  {nextDate && <svg width="9" height="14" viewBox="0 0 9 14" fill="none"><path d="M1 1l6 6-6 6" stroke={C.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                 </button>
               </div>
             </div>
@@ -743,6 +746,11 @@ export default function App() {
               </div>
             )}
 
+            {sheetMode && (
+              <button onClick={loadData} style={{ width: "100%", background: C.fill, border: "none", borderRadius: 12, padding: "12px 16px", fontSize: 14, color: C.text3, cursor: "pointer", marginBottom: 4 }}>
+                ↻ Ververs data
+              </button>
+            )}
             {!sheetMode && (
               <div style={{ background: C.orange + "15", borderRadius: 12, padding: "12px 16px", fontSize: 13, color: C.orange }}>
                 Lokale modus — configureer Google Sheets via Meer → Instellingen.
