@@ -525,11 +525,13 @@ export default function App() {
 
   const last        = entries[entries.length - 1];
   const todayEntry  = entries.find(e => e.date === today());
-  // Navigation: always navigate through actual entry dates only
-  const sortedDates = [...new Set(entries.map(e => e.date))].sort();
-  // viewDate must be one of the available dates; default to last available
-  const effectiveViewDate = sortedDates.includes(viewDate) ? viewDate : (sortedDates[sortedDates.length - 1] || today());
-  const displayEntry = entries.find(e => e.date === effectiveViewDate) || last;
+  // Navigation: entry dates + always include today as last option
+  const entryDates  = [...new Set(entries.map(e => e.date))].sort();
+  const sortedDates = entryDates.includes(today()) ? entryDates : [...entryDates, today()];
+  // effectiveViewDate defaults to today, regardless of whether there's a Sheets row
+  const effectiveViewDate = sortedDates.includes(viewDate) ? viewDate : today();
+  // For display: use matching entry, fall back to last known for metrics context
+  const displayEntry = entries.find(e => e.date === effectiveViewDate) || (effectiveViewDate === today() ? last : null);
   const viewIdx     = sortedDates.indexOf(effectiveViewDate);
   const prevDate    = viewIdx > 0 ? sortedDates[viewIdx - 1] : null;
   const nextDate    = viewIdx < sortedDates.length - 1 ? sortedDates[viewIdx + 1] : null;
