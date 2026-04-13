@@ -203,7 +203,7 @@ def write_to_sheet(garmin_data):
         row.update(garmin_data)
         row["date"] = TODAY
         print(f"  DEBUG: appending row, date={row['date']}, fields met data={[k for k,v in row.items() if v not in ('', None, False)]}")
-        result = ws.append_row(list(row.values()), value_input_option="USER_ENTERED")
+        result = ws.append_row(list(row.values()), value_input_option="USER_ENTERED", table_range="A1")
         print(f"  ✓ Nieuwe rij toegevoegd voor {TODAY} (result={result})")
 
     print("  ✓ Google Sheets bijgewerkt")
