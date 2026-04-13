@@ -530,8 +530,10 @@ export default function App() {
   const sortedDates = entryDates.includes(today()) ? entryDates : [...entryDates, today()];
   // effectiveViewDate defaults to today, regardless of whether there's a Sheets row
   const effectiveViewDate = sortedDates.includes(viewDate) ? viewDate : today();
-  // For display: use matching entry, fall back to last known for metrics context
-  const displayEntry = entries.find(e => e.date === effectiveViewDate) || (effectiveViewDate === today() ? last : null);
+  // displayEntry: alleen werkelijke data van die dag (geen fallback naar gisteren)
+  const displayEntry = entries.find(e => e.date === effectiveViewDate) || null;
+  // contextEntry: voor readiness/plan mag je de laatste bekende data gebruiken
+  const contextEntry = displayEntry || (effectiveViewDate === today() ? last : null);
   const viewIdx     = sortedDates.indexOf(effectiveViewDate);
   const prevDate    = viewIdx > 0 ? sortedDates[viewIdx - 1] : null;
   const nextDate    = viewIdx < sortedDates.length - 1 ? sortedDates[viewIdx + 1] : null;
@@ -539,9 +541,9 @@ export default function App() {
 
   const race1      = daysUntil("2026-07-05");
   const race2      = daysUntil("2026-10-04");
-  const readiness  = calcReadiness(displayEntry, entries);
+  const readiness  = calcReadiness(contextEntry, entries);
   const eventScore = calcEventScore(entries);
-  const plan       = getDailyPlan(displayEntry, entries);
+  const plan       = getDailyPlan(contextEntry, entries);
   const doneTasks  = plan.filter(t => t.done || planDone[t.id]).length;
 
   const hour = new Date().getHours();
