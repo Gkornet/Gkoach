@@ -9,9 +9,10 @@ name: Garmin Daily Sync
 
 on:
   schedule:
-    # 05:30 UTC = 06:30 NL (winter) / 07:30 NL (zomer)
-    # Pas aan naar 04:30 UTC voor zomertijd als je 06:30 wilt
-    - cron: '30 5 * * *'
+    - cron: '30 5 * * *'   # 07:30 CEST – ochtend (HRV, slaap, battery na opstaan)
+    - cron: '30 10 * * *'  # 12:30 CEST – middag  (stappen, activiteiten, stress update)
+    - cron: '30 17 * * *'  # 19:30 CEST – avond   (eindstand stappen, activiteiten)
+    - cron: '30 20 * * *'  # 22:30 CEST – nacht   (battery voor bed, geplande workouts)
   workflow_dispatch:  # Handmatig triggeren via GitHub UI
 
 jobs:

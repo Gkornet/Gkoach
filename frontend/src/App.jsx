@@ -757,6 +757,17 @@ export default function App() {
 
           <div style={{ maxWidth: 640, margin: "0 auto", padding: "16px 16px 0" }}>
 
+            {/* Geen sync vandaag banner */}
+            {isToday && !displayEntry && contextEntry && (
+              <div style={{ background: C.orange + "18", borderRadius: 12, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 16 }}>⏱</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.orange }}>Nog geen sync vandaag</div>
+                  <div style={{ fontSize: 12, color: C.text3 }}>Data hieronder is van {fmt(contextEntry.date)} · synct automatisch om 07:30, 12:30, 19:30 en 22:30</div>
+                </div>
+              </div>
+            )}
+
             {/* Readiness card */}
             <div style={{ background: C.card, borderRadius: 16, padding: "20px", marginBottom: 12, display: "flex", alignItems: "center", gap: 20 }}>
               <div style={{ position: "relative", flexShrink: 0 }}>
@@ -767,12 +778,7 @@ export default function App() {
                 </div>
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
-                  <div style={{ fontSize: 17, fontWeight: 600 }}>Readiness</div>
-                  {!displayEntry && contextEntry && isToday && (
-                    <div style={{ fontSize: 11, color: C.text3 }}>gisteren</div>
-                  )}
-                </div>
+                <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Readiness</div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
                   {[
                     { l: "HRV",    v: contextEntry?.hrv,          u: " ms",  c: C.green  },
