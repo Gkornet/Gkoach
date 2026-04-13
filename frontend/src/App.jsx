@@ -6,7 +6,7 @@ const SA_EMAIL   = import.meta.env.VITE_GOOGLE_SERVICE_ACCOUNT_EMAIL;
 const SA_KEY     = import.meta.env.VITE_GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n").replace(/\r/g, "");
 const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_API_KEY;
 const TAB        = "coach_data";
-const RANGE      = `${TAB}!A:AH`;
+const RANGE      = `${TAB}!A:AM`; // AM = kolom 39, moet overeenkomen met HEADERS.length
 const PLANNED_TAB   = "planned_workouts";
 const PLANNED_RANGE = `${PLANNED_TAB}!A:D`;
 
