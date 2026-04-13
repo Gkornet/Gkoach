@@ -959,14 +959,14 @@ export default function App() {
             if (h) obj[h] = r[i] ?? "";
           });
           return obj;
-        }).sort((a, b) => a.date.localeCompare(b.date));
+        }).filter(e => e.date).sort((a, b) => a.date.localeCompare(b.date));
         setEntries(data);
       }
       setPlanned(plannedData);
       setLastRefresh(new Date());
     } catch (e) {
       console.error("Sheets load error:", e);
-      setSheetMode(false);
+      // Niet terugvallen op lokale modus — blijf sheets gebruiken bij volgende refresh
     }
     setLoading(false);
   }, [sheetMode]);
