@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 // ── Google Sheets API ─────────────────────────────────────────────────────────
 const SHEET_ID   = import.meta.env.VITE_GOOGLE_SHEET_ID;
 const SA_EMAIL   = import.meta.env.VITE_GOOGLE_SERVICE_ACCOUNT_EMAIL;
-const SA_KEY     = import.meta.env.VITE_GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+const SA_KEY     = import.meta.env.VITE_GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n").replace(/\r/g, "");
 const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_API_KEY;
 const TAB        = "coach_data";
 const RANGE      = `${TAB}!A:AH`;
