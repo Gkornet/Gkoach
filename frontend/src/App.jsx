@@ -8,23 +8,25 @@ const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_API_KEY;
 const TAB        = "coach_data";
 const RANGE      = `${TAB}!A:AH`;
 
+const b64url = str => btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const b64urlBytes = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
 async function getJWT() {
-  const header  = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const header  = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const now     = Math.floor(Date.now() / 1000);
-  const payload = btoa(JSON.stringify({
+  const payload = b64url(JSON.stringify({
     iss: SA_EMAIL, scope: "https://www.googleapis.com/auth/spreadsheets",
     aud: "https://oauth2.googleapis.com/token", exp: now + 3600, iat: now
   }));
   const unsigned  = `${header}.${payload}`;
-  const keyData   = SA_KEY.replace(/-----BEGIN( RSA)? PRIVATE KEY-----|-----END( RSA)? PRIVATE KEY-----|\n/g, "");
+  const keyData   = SA_KEY.replace(/-----BEGIN( RSA)? PRIVATE KEY-----|-----END( RSA)? PRIVATE KEY-----|\n|\r/g, "").trim();
   const binaryKey = Uint8Array.from(atob(keyData), c => c.charCodeAt(0));
   const cryptoKey = await crypto.subtle.importKey(
     "pkcs8", binaryKey.buffer, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]
   );
-  const sig    = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, new TextEncoder().encode(unsigned));
-  const b64sig = btoa(String.fromCharCode(...new Uint8Array(sig)));
-  const jwt    = `${unsigned}.${b64sig}`;
-  const res    = await fetch("https://oauth2.googleapis.com/token", {
+  const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, new TextEncoder().encode(unsigned));
+  const jwt = `${unsigned}.${b64urlBytes(sig)}`;
+  const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
   });
