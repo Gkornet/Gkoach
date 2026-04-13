@@ -1019,7 +1019,10 @@ export default function App() {
                     {events.map((ev, i) => {
                       const urgency = ev.days < 14 ? C.red : ev.days < 42 ? C.orange : C.green;
                       const scColor = sc != null ? eventScoreColor(sc, ev.days) : C.text3;
-                      const scLabel = sc != null ? eventScoreLabel(sc, ev.days) : "Geen data";
+                      const smiley  = sc == null  ? "😐"
+                                    : scColor === C.green  ? "😊"
+                                    : scColor === C.orange ? "😐"
+                                    : "😔";
                       return (
                         <div key={ev.name} style={{ padding: "16px", borderBottom: i < events.length - 1 ? `1px solid ${C.border}` : "none" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -1032,14 +1035,12 @@ export default function App() {
                                 {new Date(ev.date + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })}
                               </div>
                             </div>
-                            <div style={{ textAlign: "right" }}>
-                              <div style={{ fontSize: 22, fontWeight: 700, color: urgency, lineHeight: 1 }}>{ev.days}</div>
-                              <div style={{ fontSize: 11, color: C.text3, marginBottom: sc != null ? 4 : 0 }}>dagen</div>
-                              {sc != null && (
-                                <div style={{ fontSize: 11, fontWeight: 600, color: scColor, background: scColor + "18", borderRadius: 20, padding: "2px 7px", display: "inline-block" }}>
-                                  {scLabel}
-                                </div>
-                              )}
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <div style={{ fontSize: 22 }}>{smiley}</div>
+                              <div style={{ textAlign: "right" }}>
+                                <div style={{ fontSize: 22, fontWeight: 700, color: urgency, lineHeight: 1 }}>{ev.days}</div>
+                                <div style={{ fontSize: 11, color: C.text3 }}>dagen</div>
+                              </div>
                             </div>
                           </div>
                         </div>
