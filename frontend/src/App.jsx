@@ -949,17 +949,15 @@ export default function App() {
       const [res, plannedData] = await Promise.all([sheetsGet(), sheetsGetPlanned().catch(() => [])]);
       const rows = res.values || [];
       if (rows.length >= 2) {
-        // Gebruik de werkelijke sheet-headers (rij 1) als primaire mapping
-        // zodat kolom-volgorde in de sheet leidend is. Val terug op HEADERS-index
-        // als de sheet-header niet in HEADERS voorkomt.
+        // Gebruik UITSLUITEND de werkelijke sheet-headers (rij 1) voor kolom-mapping.
+        // Geen positie-based fallback — die geeft foute waarden als kolommen zijn
+        // ingevoegd of de volgorde in de sheet afwijkt van HEADERS.
         const sheetHeaders = rows[0].map(h => String(h).trim().toLowerCase());
         const data = rows.slice(1).map(r => {
           const obj = {};
           sheetHeaders.forEach((h, i) => {
             if (h) obj[h] = r[i] ?? "";
           });
-          // Zorg dat alle HEADERS-velden altijd aanwezig zijn (ook als sheet-header ontbreekt)
-          HEADERS.forEach((h, i) => { if (!(h in obj)) obj[h] = r[i] ?? ""; });
           return obj;
         }).sort((a, b) => a.date.localeCompare(b.date));
         setEntries(data);
@@ -1124,10 +1122,13 @@ export default function App() {
   const race2      = daysUntil("2026-10-04");
   const readiness  = calcReadiness(contextEntry, entries);
   const eventScore = calcEventScore(entries);
-  // Step goal: gebruik Garmin-waarde uit sheet als beschikbaar, anders localStorage instelling
-  const effectiveStepGoal = parseNum(todayEntry?.step_goal) > 0
-    ? parseNum(todayEntry.step_goal)
-    : stepGoal;
+  // Step goal: gebruik Garmin's dailyStepGoal uit sheet (kolom AN) als reëel getal (≥3000),
+  // anders terugvallen op 10.000. Garmin schrijft dit na elke sync automatisch.
+  const garminStepGoal = (() => {
+    const v = parseNum(todayEntry?.step_goal);
+    return v >= 3000 ? v : null;
+  })();
+  const effectiveStepGoal = garminStepGoal ?? 10000;
   const plan       = getDailyPlan(displayEntry, contextEntry, entries, planned, effectiveStepGoal);
   // HRV display: elk veld onafhankelijk zoeken in meest recente entry met die waarde
   // (vandaag kan hrv-nacht leeg zijn terwijl hrv_7d en hrv_5min wel gevuld zijn)
@@ -2304,38 +2305,6 @@ export default function App() {
                 </div>
               </div>
             ))}
-          </div>
-
-          {/* Stappendoel */}
-          <div style={{ fontSize: 17, fontWeight: 600, margin: "24px 0 10px" }}>Dagelijks stappendoel</div>
-          <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 8 }}>
-            <div style={{ fontSize: 13, color: C.text3, marginBottom: 10 }}>
-              Stel je Garmin stappendoel in. Garmin past dit automatisch aan op basis van je vorige week.
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <input
-                type="number"
-                min="1000" max="30000" step="100"
-                value={stepGoal}
-                onChange={e => {
-                  const v = parseInt(e.target.value, 10);
-                  if (!isNaN(v) && v > 0) {
-                    setStepGoal(v);
-                    localStorage.setItem("step_goal", String(v));
-                  }
-                }}
-                style={{ flex: 1, background: C.fill, border: "none", borderRadius: 10, padding: "10px 14px", fontSize: 16, fontWeight: 600, color: C.text, outline: "none" }}
-              />
-              <span style={{ fontSize: 14, color: C.text3 }}>stappen</span>
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-              {[6000, 8000, 9000, 9110, 10000, 12000].map(g => (
-                <button key={g} onClick={() => { setStepGoal(g); localStorage.setItem("step_goal", String(g)); }}
-                  style={{ background: stepGoal === g ? C.blue : C.fill, color: stepGoal === g ? "#fff" : C.text3, border: "none", borderRadius: 20, padding: "4px 12px", fontSize: 13, cursor: "pointer", fontWeight: stepGoal === g ? 600 : 400 }}>
-                  {g.toLocaleString("nl")}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* App installeren */}

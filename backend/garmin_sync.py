@@ -202,10 +202,23 @@ def write_to_sheet(garmin_data):
     try:
         ws = sh.worksheet(SHEET_TAB)
     except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title=SHEET_TAB, rows=1000, cols=30)
-        # Headers aanmaken
+        ws = sh.add_worksheet(title=SHEET_TAB, rows=1000, cols=50)
         ws.append_row(HEADERS)
         print(f"  ✓ Nieuw tabblad '{SHEET_TAB}' aangemaakt met headers")
+
+    # Zorg dat de header-rij (rij 1) altijd overeenkomt met de huidige HEADERS definitie.
+    # Dit herstelt kolom-namen die door eerder (de)synchronisatie verschoven of hernoemd zijn.
+    import gspread as _gs
+    major = int(_gs.__version__.split(".")[0])
+    current_headers = ws.row_values(1)
+    if current_headers[:len(HEADERS)] != HEADERS:
+        if major >= 6:
+            ws.update([HEADERS], "A1")
+        else:
+            ws.update("A1", [HEADERS])
+        print(f"  ✓ Header-rij bijgewerkt naar actuele HEADERS ({len(HEADERS)} kolommen)")
+    else:
+        print(f"  ✓ Header-rij al correct")
 
     all_dates = ws.col_values(1)
 
@@ -217,9 +230,6 @@ def write_to_sheet(garmin_data):
         row = dict(zip(HEADERS, existing))
         row.update({k: v for k, v in garmin_data.items()})
         row["date"] = TODAY
-        # gspread 6.x: update(values, range_name) — gspread 5.x: update(range_name, values)
-        import gspread as _gs
-        major = int(_gs.__version__.split(".")[0])
         if major >= 6:
             result = ws.update([list(row.values())], f"A{row_idx}")
         else:
