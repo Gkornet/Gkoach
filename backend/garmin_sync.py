@@ -149,7 +149,7 @@ def get_garmin_data():
     except Exception as e:
         print(f"  ⚠ VO2max: {e}")
 
-    return data
+    return client, data
 
 
 # ── Google Sheets schrijven ───────────────────────────────────────────────────
@@ -197,6 +197,55 @@ def write_to_sheet(garmin_data):
     print("  ✓ Google Sheets bijgewerkt")
 
 
+# ── Geplande workouts schrijven ───────────────────────────────────────────────
+PLANNED_TAB = "planned_workouts"
+PLANNED_HEADERS = ["date", "title", "sport", "workout_id"]
+
+def write_planned_workouts(client):
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    print(f"\nGeplande workouts ophalen...")
+
+    # Haal komende 2 maanden op
+    today_obj = datetime.date.today()
+    items = []
+    for delta in range(2):
+        year = (today_obj.replace(day=1) + datetime.timedelta(days=32 * delta)).year
+        month = (today_obj.replace(day=1) + datetime.timedelta(days=32 * delta)).month
+        try:
+            cal = client.get_scheduled_workouts(year, month)
+            for item in cal.get("calendarItems", []):
+                if item.get("itemType") == "workout" and item.get("date", "") >= today_obj.isoformat():
+                    items.append({
+                        "date":       item.get("date", ""),
+                        "title":      item.get("title", ""),
+                        "sport":      item.get("sportTypeKey", ""),
+                        "workout_id": str(item.get("workoutId", "")),
+                    })
+        except Exception as e:
+            print(f"  ⚠ Kalender maand {month}: {e}")
+
+    items.sort(key=lambda x: x["date"])
+    print(f"  ✓ {len(items)} geplande workouts gevonden")
+
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT, scopes=scopes)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(SHEET_ID)
+
+    try:
+        ws = sh.worksheet(PLANNED_TAB)
+        ws.clear()
+    except gspread.WorksheetNotFound:
+        ws = sh.add_worksheet(title=PLANNED_TAB, rows=200, cols=10)
+
+    ws.append_row(PLANNED_HEADERS)
+    for item in items:
+        ws.append_row([item[h] for h in PLANNED_HEADERS])
+    print(f"  ✓ planned_workouts tab bijgewerkt ({len(items)} rijen)")
+
+
 # ── Headers (moeten overeenkomen met de app) ──────────────────────────────────
 HEADERS = [
     "date", "weight", "alcohol", "bp_sys", "bp_dia",
@@ -224,8 +273,9 @@ if __name__ == "__main__":
         sys.exit(1)
 
     try:
-        garmin_data = get_garmin_data()
+        client, garmin_data = get_garmin_data()
         write_to_sheet(garmin_data)
+        write_planned_workouts(client)
         print(f"\n✅ Sync voltooid voor {TODAY}")
     except Exception as e:
         print(f"\n❌ Sync mislukt: {e}")

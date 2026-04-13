@@ -7,6 +7,8 @@ const SA_KEY     = import.meta.env.VITE_GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n"
 const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_API_KEY;
 const TAB        = "coach_data";
 const RANGE      = `${TAB}!A:AH`;
+const PLANNED_TAB   = "planned_workouts";
+const PLANNED_RANGE = `${PLANNED_TAB}!A:D`;
 
 const b64url = str => btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const b64urlBytes = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -40,6 +42,22 @@ async function sheetsGet() {
     { headers: { Authorization: `Bearer ${token}` } }
   );
   return res.json();
+}
+
+async function sheetsGetPlanned() {
+  const token = await getJWT();
+  const res = await fetch(
+    `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(PLANNED_RANGE)}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  const d = await res.json();
+  if (!d.values || d.values.length < 2) return [];
+  const hdrs = d.values[0];
+  return d.values.slice(1).map(r => {
+    const obj = {};
+    hdrs.forEach((h, i) => { obj[h] = r[i] ?? ""; });
+    return obj;
+  });
 }
 
 async function sheetsAppend(row) {
@@ -369,9 +387,10 @@ export default function App() {
   const [question,  setQuestion]  = useState("");
   const [saveMsg,   setSaveMsg]   = useState("");
   const [sheetMode, setSheetMode] = useState(!!SHEET_ID);
-  const [planDone,  setPlanDone]  = useState({});
-  const [taskDetail, setTaskDetail] = useState(null);
-  const [viewDate,  setViewDate]  = useState(today());
+  const [planDone,    setPlanDone]    = useState({});
+  const [taskDetail,  setTaskDetail]  = useState(null);
+  const [viewDate,    setViewDate]    = useState(today());
+  const [planned,     setPlanned]     = useState([]);
 
   const loadData = useCallback(async () => {
     if (!sheetMode) {
@@ -383,16 +402,18 @@ export default function App() {
       return;
     }
     try {
-      const res  = await sheetsGet();
+      const [res, plannedData] = await Promise.all([sheetsGet(), sheetsGetPlanned().catch(() => [])]);
       const rows = res.values || [];
-      if (rows.length < 2) { setLoading(false); return; }
-      const hdrs = rows[0];
-      const data = rows.slice(1).map(r => {
-        const obj = {};
-        hdrs.forEach((h, i) => { obj[h] = r[i] ?? ""; });
-        return obj;
-      }).sort((a, b) => a.date.localeCompare(b.date));
-      setEntries(data);
+      if (rows.length >= 2) {
+        const hdrs = rows[0];
+        const data = rows.slice(1).map(r => {
+          const obj = {};
+          hdrs.forEach((h, i) => { obj[h] = r[i] ?? ""; });
+          return obj;
+        }).sort((a, b) => a.date.localeCompare(b.date));
+        setEntries(data);
+      }
+      setPlanned(plannedData);
     } catch (e) {
       console.error("Sheets load error:", e);
       setSheetMode(false);
@@ -745,6 +766,40 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* Geplande trainingen uit Garmin coach plan */}
+            {planned.length > 0 && (() => {
+              const upcoming = planned.filter(p => p.date >= today()).slice(0, 7);
+              if (!upcoming.length) return null;
+              const sportIcon = (s) => s?.includes("run") ? "🏃" : s?.includes("cycl") ? "🚴" : s?.includes("swim") ? "🏊" : "💪";
+              const dayLabel = (d) => {
+                const diff = Math.ceil((new Date(d) - new Date(today())) / 86400000);
+                if (diff === 0) return "Vandaag";
+                if (diff === 1) return "Morgen";
+                return new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" });
+              };
+              return (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Garmin trainingsplan</div>
+                  <div style={{ background: C.card, borderRadius: 16, overflow: "hidden" }}>
+                    {upcoming.map((p, i) => (
+                      <div key={p.date + p.title} style={{ padding: "13px 16px", display: "flex", alignItems: "center", gap: 14, borderBottom: i < upcoming.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 10, background: C.orange + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
+                          {sportIcon(p.sport)}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 15, fontWeight: 500 }}>{p.title}</div>
+                          <div style={{ fontSize: 12, color: C.text3, marginTop: 1 }}>{dayLabel(p.date)}</div>
+                        </div>
+                        {p.date === today() && (
+                          <div style={{ fontSize: 11, fontWeight: 600, color: C.orange, background: C.orange + "15", padding: "3px 8px", borderRadius: 20 }}>Vandaag</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {sheetMode && (
               <button onClick={loadData} style={{ width: "100%", background: C.fill, border: "none", borderRadius: 12, padding: "12px 16px", fontSize: 14, color: C.text3, cursor: "pointer", marginBottom: 4 }}>
