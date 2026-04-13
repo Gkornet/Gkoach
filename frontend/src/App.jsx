@@ -324,6 +324,42 @@ const C = {
 const readinessColor = (s) => s >= 75 ? C.green : s >= 50 ? C.orange : C.red;
 const readinessLabel = (s) => s >= 75 ? "Klaar" : s >= 50 ? "Matig" : "Herstel";
 
+// ── Event performance score ───────────────────────────────────────────────────
+// Combineert: HRV trend, trainingsvolume, gemiddelde slaap, VO2max
+function calcEventScore(entries) {
+  if (!entries || entries.length < 3) return null;
+  const recent = entries.slice(-21); // laatste 3 weken
+
+  // 1. HRV trend: stijgend = goed
+  const hrvVals = numArr(recent, "hrv");
+  let hrvScore = 50;
+  if (hrvVals.length >= 4) {
+    const half = Math.floor(hrvVals.length / 2);
+    const firstHalf = hrvVals.slice(0, half).reduce((a,b) => a+b, 0) / half;
+    const secondHalf = hrvVals.slice(half).reduce((a,b) => a+b, 0) / (hrvVals.length - half);
+    hrvScore = 50 + Math.min(30, Math.max(-30, (secondHalf - firstHalf) / firstHalf * 150));
+  }
+
+  // 2. Trainingsvolume: aantal trainingsdagen in 3 weken (doel 9–12)
+  const trainDays = recent.filter(e => isTrue(e.trained)).length;
+  const volScore = Math.min(100, (trainDays / 10) * 100);
+
+  // 3. Slaapkwaliteit gemiddeld vs doel 7.5u
+  const sleepVals = numArr(recent, "sleep_h");
+  const avgSleep = sleepVals.length ? sleepVals.reduce((a,b) => a+b,0) / sleepVals.length : 7;
+  const sleepScore = Math.min(100, (avgSleep / 7.5) * 100);
+
+  // 4. VO2max als beschikbaar
+  const vo2Vals = numArr(entries.slice(-30), "vo2max").filter(v => v > 30);
+  const vo2Score = vo2Vals.length ? Math.min(100, ((vo2Vals[vo2Vals.length-1] - 35) / 25) * 100) : 50;
+
+  const score = Math.round(hrvScore * 0.35 + volScore * 0.35 + sleepScore * 0.2 + vo2Score * 0.1);
+  return Math.max(0, Math.min(100, score));
+}
+
+const eventScoreColor = (s) => s >= 70 ? C.green : s >= 45 ? C.orange : C.red;
+const eventScoreLabel = (s) => s >= 70 ? "Op schema" : s >= 45 ? "Bijsturen" : "Aandacht";
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 const Ring = ({ value, max = 100, color, size = 120, stroke = 10 }) => {
   const r = (size - stroke) / 2;
@@ -499,11 +535,12 @@ export default function App() {
   const nextDate    = viewIdx < sortedDates.length - 1 ? sortedDates[viewIdx + 1] : null;
   const isToday     = effectiveViewDate === today();
 
-  const race1     = daysUntil("2026-07-05");
-  const race2     = daysUntil("2026-10-04");
-  const readiness = calcReadiness(displayEntry, entries);
-  const plan      = getDailyPlan(displayEntry, entries);
-  const doneTasks = plan.filter(t => t.done || planDone[t.id]).length;
+  const race1      = daysUntil("2026-07-05");
+  const race2      = daysUntil("2026-10-04");
+  const readiness  = calcReadiness(displayEntry, entries);
+  const eventScore = calcEventScore(entries);
+  const plan       = getDailyPlan(displayEntry, entries);
+  const doneTasks  = plan.filter(t => t.done || planDone[t.id]).length;
 
   const hour = new Date().getHours();
   const greeting = hour < 6 ? "Goedenacht" : hour < 12 ? "Goedemorgen" : hour < 18 ? "Goedemiddag" : "Goedenavond";
@@ -638,24 +675,28 @@ export default function App() {
       {/* ── VANDAAG ── */}
       {tab === "vandaag" && (
         <div className="fade" style={{ paddingBottom: 90 }}>
-          {/* Header with date navigation */}
-          <div style={{ background: C.card, padding: "56px 20px 16px", borderBottom: `1px solid ${C.border}` }}>
+          {/* Header */}
+          <div style={{ background: C.card, padding: "52px 20px 16px", borderBottom: `1px solid ${C.border}` }}>
             <div style={{ maxWidth: 640, margin: "0 auto" }}>
-              <div style={{ fontSize: 13, color: C.text3, marginBottom: 2 }}>{isToday ? greeting : ""}</div>
+              {isToday && (
+                <div style={{ fontSize: 13, color: C.text3, marginBottom: 4 }}>{greeting}</div>
+              )}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                <button onClick={() => prevDate && setViewDate(prevDate)} style={{ width: 36, height: 36, borderRadius: 18, background: prevDate ? C.fill : "transparent", border: "none", cursor: prevDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {prevDate && <svg width="9" height="14" viewBox="0 0 9 14" fill="none"><path d="M8 1L2 7l6 6" stroke={C.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                <button onClick={() => prevDate && setViewDate(prevDate)}
+                  style={{ width: 36, height: 36, borderRadius: 18, background: "transparent", border: "none", cursor: prevDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", opacity: prevDate ? 1 : 0 }}>
+                  <svg width="9" height="15" viewBox="0 0 9 15" fill="none"><path d="M8 1L2 7.5 8 14" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
                 <div style={{ textAlign: "center" }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: "-0.3px" }}>
-                    {isToday ? "Vandaag" : fmt(effectiveViewDate)}
+                  <div style={{ fontSize: 24, fontWeight: 700, letterSpacing: "-0.5px", lineHeight: 1.2 }}>
+                    {isToday ? new Date().toLocaleDateString("nl-NL", { weekday: "long" }).replace(/^\w/, c => c.toUpperCase()) : new Date(effectiveViewDate + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long" }).replace(/^\w/, c => c.toUpperCase())}
                   </div>
-                  <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
-                    {isToday ? new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" }) : effectiveViewDate}
+                  <div style={{ fontSize: 14, color: C.text3, marginTop: 2 }}>
+                    {new Date((isToday ? today() : effectiveViewDate) + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })}
                   </div>
                 </div>
-                <button onClick={() => nextDate && setViewDate(nextDate)} style={{ width: 36, height: 36, borderRadius: 18, background: nextDate ? C.fill : "transparent", border: "none", cursor: nextDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  {nextDate && <svg width="9" height="14" viewBox="0 0 9 14" fill="none"><path d="M1 1l6 6-6 6" stroke={C.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                <button onClick={() => nextDate && setViewDate(nextDate)}
+                  style={{ width: 36, height: 36, borderRadius: 18, background: "transparent", border: "none", cursor: nextDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", opacity: nextDate ? 1 : 0 }}>
+                  <svg width="9" height="15" viewBox="0 0 9 15" fill="none"><path d="M1 1l6 6.5L1 14" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
                 </button>
               </div>
             </div>
@@ -690,20 +731,6 @@ export default function App() {
                     );
                   })}
                 </div>
-              </div>
-            </div>
-
-            {/* Race countdowns */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-              <div style={{ flex: 1, background: C.card, borderRadius: 14, padding: "14px 16px" }}>
-                <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>10K Noordwijk</div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: C.green, lineHeight: 1 }}>{race1}</div>
-                <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>dagen</div>
-              </div>
-              <div style={{ flex: 1, background: C.card, borderRadius: 14, padding: "14px 16px" }}>
-                <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>Gym-race Utrecht</div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: C.blue, lineHeight: 1 }}>{race2}</div>
-                <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>dagen</div>
               </div>
             </div>
 
@@ -766,6 +793,57 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* Aankomende events */}
+            {(() => {
+              const sc = eventScore;
+              const scColor = sc != null ? eventScoreColor(sc) : C.text3;
+              const scLabel = sc != null ? eventScoreLabel(sc) : "Geen data";
+              const events = [
+                { name: "10K Noordwijk", date: "2026-07-05", days: race1, icon: "🏃" },
+                { name: "Gym-race Utrecht", date: "2026-10-04", days: race2, icon: "💪" },
+              ];
+              return (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Aankomende events</div>
+                  <div style={{ background: C.card, borderRadius: 16, overflow: "hidden" }}>
+                    {events.map((ev, i) => {
+                      const urgency = ev.days < 14 ? C.red : ev.days < 42 ? C.orange : C.green;
+                      return (
+                        <div key={ev.name} style={{ padding: "16px", borderBottom: i < events.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                            <div style={{ width: 42, height: 42, borderRadius: 12, background: urgency + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, flexShrink: 0 }}>
+                              {ev.icon}
+                            </div>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 15, fontWeight: 600 }}>{ev.name}</div>
+                              <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
+                                {new Date(ev.date + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontSize: 22, fontWeight: 700, color: urgency, lineHeight: 1 }}>{ev.days}</div>
+                              <div style={{ fontSize: 11, color: C.text3 }}>dagen</div>
+                            </div>
+                          </div>
+                          {/* Performance indicator */}
+                          {sc != null && (
+                            <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
+                              <div style={{ flex: 1, height: 6, background: C.fill, borderRadius: 3, overflow: "hidden" }}>
+                                <div style={{ height: "100%", width: `${sc}%`, background: scColor, borderRadius: 3, transition: "width 0.6s ease" }} />
+                              </div>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: scColor, minWidth: 70, textAlign: "right" }}>
+                                {scLabel} · {sc}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Geplande trainingen uit Garmin coach plan */}
             {planned.length > 0 && (() => {
