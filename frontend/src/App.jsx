@@ -97,7 +97,8 @@ const HEADERS = [
   "ground_contact","vertical_osc","vertical_ratio","stride_length","training_effect","vo2max",
   "energy","mental_unrest","breathing","breathing_type","notes","sleep_prep",
   "koffie","mood",
-  "hrv_weekly","hrv_5min"
+  "hrv_weekly","hrv_5min",
+  "activities"
 ];
 
 // Plan item → entry field mapping (for auto-save)
@@ -153,8 +154,7 @@ function getDailyPlan(todayData, contextData, entries) {
 
   // Training: alleen als vandaag echt een activiteit heeft (todayData), niet gisteren
   const trainType = (todayData?.train_type || "").toLowerCase();
-  const isWalking = trainType === "walking" || trainType === "casual_walking";
-  const garminTrained = isTrue(todayData?.trained) && !isWalking;
+  const garminTrained = isTrue(todayData?.trained);
   const typeLabel = todayData?.train_type
     ? todayData.train_type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
     : "";
@@ -1025,6 +1025,50 @@ export default function App() {
                 );
               })}
             </div>
+
+            {/* Activiteiten vandaag */}
+            {(() => {
+              const raw = displayEntry?.activities || contextEntry?.activities;
+              if (!raw) return null;
+              let acts = [];
+              try { acts = JSON.parse(raw); } catch { return null; }
+              if (!acts.length) return null;
+              const sportIcon = t => {
+                const s = (t||"").toLowerCase();
+                if (s.includes("run"))      return "🏃";
+                if (s.includes("walk"))     return "🚶";
+                if (s.includes("cycl") || s.includes("bike")) return "🚴";
+                if (s.includes("swim"))     return "🏊";
+                if (s.includes("strength") || s.includes("gym") || s.includes("weight")) return "🏋️";
+                if (s.includes("yoga"))     return "🧘";
+                if (s.includes("breath"))   return "🫁";
+                if (s.includes("cardio") || s.includes("hiit")) return "⚡";
+                return "🏅";
+              };
+              const typeLabel = t => (t||"").replace(/_/g," ").replace(/\b\w/g, c=>c.toUpperCase());
+              return (
+                <div style={{ background: C.card, borderRadius: 16, overflow: "hidden", marginBottom: 12 }}>
+                  <div style={{ padding: "14px 16px 10px", fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    Activiteiten vandaag
+                  </div>
+                  {acts.map((a, i) => (
+                    <div key={i} style={{ padding: "10px 16px", display: "flex", alignItems: "center", gap: 14,
+                      borderTop: `1px solid ${C.border}` }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 10, background: C.orange + "15",
+                        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
+                        {sportIcon(a.type)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 500 }}>{a.name || typeLabel(a.type)}</div>
+                        <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
+                          {[a.min && `${a.min} min`, a.dist && `${a.dist} km`, a.hr && `${a.hr} bpm gem.`].filter(Boolean).join(" · ")}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
 
             {/* Run stats for displayed entry */}
             {displayEntry?.avg_pace && (

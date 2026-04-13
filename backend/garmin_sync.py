@@ -100,41 +100,60 @@ def get_garmin_data():
     except Exception as e:
         print(f"  ✗ Stappen: {e}")
 
-    # Training + hardloop dynamics
+    # Activiteiten — alle activiteiten van vandaag + hardloop dynamics voor primaire
+    WALKING_TYPES = {"walking", "casual_walking"}
     try:
         yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
         activities = client.get_activities_by_date(yesterday, TODAY)
-        if activities:
-            act = activities[-1]
-            data["trained"]    = True
-            data["train_type"] = act.get("activityType", {}).get("typeKey", "")
-            data["train_min"]  = round(act.get("duration", 0) / 60)
-            data["train_dist"] = round(act.get("distance", 0) / 1000, 2)
-            data["avg_hr"]     = act.get("averageHR", "")
-            data["max_hr"]     = act.get("maxHR", "")
 
-            # Tempo (min:sec per km)
-            speed = act.get("averageSpeed", 0)
+        # Sla alle activiteiten op als JSON-lijst
+        all_acts = []
+        for a in activities:
+            t = a.get("activityType", {}).get("typeKey", "")
+            dist_km = round(a.get("distance", 0) / 1000, 2)
+            all_acts.append({
+                "type":  t,
+                "name":  a.get("activityName", ""),
+                "min":   round(a.get("duration", 0) / 60),
+                "dist":  dist_km if dist_km > 0 else None,
+                "hr":    a.get("averageHR") or None,
+                "id":    a.get("activityId"),
+            })
+        data["activities"] = json.dumps(all_acts, ensure_ascii=False) if all_acts else ""
+
+        # Primaire training = eerste niet-wandel activiteit, anders eerste van alles
+        primary = next((a for a in activities if a.get("activityType", {}).get("typeKey", "") not in WALKING_TYPES), None)
+        if primary is None and activities:
+            primary = activities[-1]
+
+        if primary:
+            ptype = primary.get("activityType", {}).get("typeKey", "")
+            data["trained"]    = ptype not in WALKING_TYPES
+            data["train_type"] = ptype
+            data["train_min"]  = round(primary.get("duration", 0) / 60)
+            data["train_dist"] = round(primary.get("distance", 0) / 1000, 2)
+            data["avg_hr"]     = primary.get("averageHR", "")
+            data["max_hr"]     = primary.get("maxHR", "")
+
+            speed = primary.get("averageSpeed", 0)
             if speed and speed > 0:
                 sec_km = 1000 / speed
                 data["avg_pace"] = f"{int(sec_km // 60)}:{int(sec_km % 60):02d}"
 
-            # Hardloop dynamics (alleen bij hardloopactiviteiten)
-            activity_id = act.get("activityId")
-            if activity_id and "run" in data["train_type"].lower():
+            if primary.get("activityId") and "run" in ptype.lower():
                 try:
-                    details = client.get_activity(activity_id)
-                    data["cadence"]          = details.get("averageRunningCadenceInStepsPerMinute", "")
-                    data["ground_contact"]   = details.get("avgGroundContactTime", "")
-                    data["vertical_osc"]     = round(details.get("avgVerticalOscillation", 0) / 10, 1) or ""  # mm → cm
-                    data["vertical_ratio"]   = details.get("avgVerticalRatio", "")
-                    data["stride_length"]    = round(details.get("avgStrideLength", 0) / 100, 2) or ""  # cm → m
-                    data["training_effect"]  = details.get("trainingEffect", "")
+                    details = client.get_activity(primary["activityId"])
+                    data["cadence"]         = details.get("averageRunningCadenceInStepsPerMinute", "")
+                    data["ground_contact"]  = details.get("avgGroundContactTime", "")
+                    data["vertical_osc"]    = round(details.get("avgVerticalOscillation", 0) / 10, 1) or ""
+                    data["vertical_ratio"]  = details.get("avgVerticalRatio", "")
+                    data["stride_length"]   = round(details.get("avgStrideLength", 0) / 100, 2) or ""
+                    data["training_effect"] = details.get("trainingEffect", "")
                     print(f"  ✓ Hardloop dynamics: cadans {data['cadence']}, GCT {data['ground_contact']}ms")
                 except Exception as e:
                     print(f"  ⚠ Hardloop dynamics: {e}")
 
-            print(f"  ✓ Training: {data['train_type']} ({data['train_min']} min, HR avg {data.get('avg_hr','-')})")
+            print(f"  ✓ Activiteiten ({len(all_acts)}x): {[a['type'] for a in all_acts]}")
         else:
             data["trained"]    = False
             data["train_type"] = ""
@@ -265,7 +284,8 @@ HEADERS = [
     "ground_contact", "vertical_osc", "vertical_ratio", "stride_length", "training_effect", "vo2max",
     "energy", "mental_unrest", "breathing", "breathing_type", "notes", "sleep_prep",
     "koffie", "mood",
-    "hrv_weekly", "hrv_5min"
+    "hrv_weekly", "hrv_5min",
+    "activities"
 ]
 
 
