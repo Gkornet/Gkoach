@@ -128,7 +128,10 @@ function calcReadiness(last, entries) {
 }
 
 // ── Daily plan ────────────────────────────────────────────────────────────────
-function getDailyPlan(last, entries) {
+// todayData = strict today entry (null if not synced yet)
+// contextData = last known entry for readiness/HRV context
+function getDailyPlan(todayData, contextData, entries) {
+  const last       = contextData; // for readiness calcs
   const readiness  = calcReadiness(last, entries);
   const race1Days  = daysUntil("2026-07-05");
   const recentDays = (entries || []).slice(-3);
@@ -136,22 +139,21 @@ function getDailyPlan(last, entries) {
   const needsRest  = trainedRecently >= 2 || (readiness !== null && readiness < 45);
   const canIntense = readiness !== null && readiness >= 70;
 
-  // Training: als Garmin al een activiteit heeft, toon die — anders geef advies
-  const garminTrained = isTrue(last?.trained);
-  const typeLabel = last?.train_type
-    ? last.train_type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
+  // Training: alleen als vandaag echt een activiteit heeft (todayData), niet gisteren
+  const garminTrained = isTrue(todayData?.trained);
+  const typeLabel = todayData?.train_type
+    ? todayData.train_type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
     : "";
-  const isRun = (last?.train_type || "").toLowerCase().includes("run");
+  const isRun = (todayData?.train_type || "").toLowerCase().includes("run");
   const trainDone = garminTrained;
 
   let trainTask;
   if (garminTrained) {
-    // Garmin heeft vandaag al een activiteit gesynct — toon die
     const parts = [];
-    if (last?.train_min) parts.push(`${last.train_min} min`);
-    if (last?.train_dist) parts.push(`${last.train_dist} km`);
-    if (last?.avg_hr) parts.push(`gem. ${last.avg_hr} bpm`);
-    if (isRun && last?.avg_pace) parts.push(`${last.avg_pace}/km`);
+    if (todayData?.train_min) parts.push(`${todayData.train_min} min`);
+    if (todayData?.train_dist) parts.push(`${todayData.train_dist} km`);
+    if (todayData?.avg_hr) parts.push(`gem. ${todayData.avg_hr} bpm`);
+    if (isRun && todayData?.avg_pace) parts.push(`${todayData.avg_pace}/km`);
     trainTask = { icon: isRun ? "🏃" : "💪", label: typeLabel || "Training", sub: parts.join(" · ") || "Gesynchroniseerd vanuit Garmin", color: C.orange, cat: "Training" };
   } else if (needsRest) {
     trainTask = { icon: "🧘", label: "Hersteldag", sub: "Lichte wandeling of rust — HRV vraagt herstel", color: C.teal, cat: "Herstel" };
@@ -178,19 +180,21 @@ function getDailyPlan(last, entries) {
   const screenOffM = screenOffMin % 60;
   const screenOff = `${screenOffH}:${String(screenOffM).padStart(2, "0")}`;
 
-  const sleepActual = !isNaN(parseNum(last?.sleep_h)) ? parseNum(last.sleep_h) : null;
+  // slaap van vannacht staat in vandaag's sync (garmin logt slaap bij de ochtend)
+  const sleepActual = !isNaN(parseNum(todayData?.sleep_h)) ? parseNum(todayData.sleep_h) : null;
   const sleepDone = sleepActual !== null && sleepActual >= SLEEP_GOAL;
-  const sleepPrepped = isTrue(last?.sleep_prep);
+  const sleepPrepped = isTrue(todayData?.sleep_prep);
   const sleepSub = sleepActual !== null
-    ? `Gisteren ${sleepActual}u · doel ${SLEEP_GOAL}u · bed om ${bedTime}`
+    ? `Gisternacht ${sleepActual}u · doel ${SLEEP_GOAL}u · bed om ${bedTime}`
     : `Schermen weg ${screenOff} · in bed om ${bedTime} · wekker 06:30`;
 
+  const todaySteps = parseNum(todayData?.steps);
   return [
-    { id: "morning", cat: "Ochtend", icon: "🌅", label: "Ochtendmeting", sub: "HRV & body battery ophalen via Garmin", color: C.blue, auto: true, done: !!last?.hrv },
-    { id: "breathing", cat: "Mindfulness", icon: "🫁", label: "Box breathing", sub: "4×4 min · 4 tellen in-hold-uit-hold", color: C.purple, done: isTrue(last?.breathing) },
+    { id: "morning", cat: "Ochtend", icon: "🌅", label: "Ochtendmeting", sub: "HRV & body battery ophalen via Garmin", color: C.blue, auto: true, done: !!todayData?.hrv },
+    { id: "breathing", cat: "Mindfulness", icon: "🫁", label: "Box breathing", sub: "4×4 min · 4 tellen in-hold-uit-hold", color: C.purple, done: isTrue(todayData?.breathing) },
     { ...trainTask, id: "training", done: trainDone },
-    { id: "steps", cat: "Beweging", icon: "👟", label: "Dagelijks stappendoel", sub: `${last?.steps ? Math.round(+last.steps).toLocaleString("nl") : "—"} / 10.000 vandaag`, color: C.green, auto: true, done: +last?.steps >= 10000 },
-    { id: "checkin", cat: "Check-in", icon: "📋", label: "Dagelijkse check-in", sub: "Energie, gewicht, opmerkingen invullen", color: C.blue, done: !!(last?.date === today() && last?.energy) },
+    { id: "steps", cat: "Beweging", icon: "👟", label: "Dagelijks stappendoel", sub: `${!isNaN(todaySteps) ? Math.round(todaySteps).toLocaleString("nl") : "—"} / 10.000 vandaag`, color: C.green, auto: true, done: todaySteps >= 10000 },
+    { id: "checkin", cat: "Check-in", icon: "📋", label: "Dagelijkse check-in", sub: "Energie, gewicht, opmerkingen invullen", color: C.blue, done: !!(todayData?.date === today() && todayData?.energy) },
     { id: "sleep", cat: "Avond", icon: "🌙", label: "Slaapvoorbereiding", sub: sleepSub, color: C.indigo, done: sleepDone || sleepPrepped },
   ];
 }
@@ -543,7 +547,7 @@ export default function App() {
   const race2      = daysUntil("2026-10-04");
   const readiness  = calcReadiness(contextEntry, entries);
   const eventScore = calcEventScore(entries);
-  const plan       = getDailyPlan(contextEntry, entries);
+  const plan       = getDailyPlan(displayEntry, contextEntry, entries);
   const doneTasks  = plan.filter(t => t.done || planDone[t.id]).length;
 
   const hour = new Date().getHours();
@@ -694,7 +698,7 @@ export default function App() {
                   <div style={{ fontSize: 13, color: C.text3, marginTop: 2 }}>
                     {new Date(effectiveViewDate + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })}
                   </div>
-                  {isToday && <div style={{ fontSize: 12, color: C.blue, marginTop: 3, fontWeight: 500 }}>{greeting}</div>}
+                  <div style={{ fontSize: 12, color: C.blue, marginTop: 3, fontWeight: 500, opacity: isToday ? 1 : 0 }}>{greeting}</div>
                 </div>
                 <button onClick={() => nextDate && setViewDate(nextDate)}
                   style={{ width: 36, height: 36, borderRadius: 18, background: "transparent", border: "none", cursor: nextDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", opacity: nextDate ? 1 : 0, flexShrink: 0 }}>
