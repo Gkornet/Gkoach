@@ -88,17 +88,20 @@ async function sheetsUpdate(rowIdx, row) {
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
+// Kolom A–J: datum t/m hrv, dan K=hrv_7d L=hrv_5min (door gebruiker aangemaakt),
+// dan M=rhr N=stress O=body_battery P=steps, enz. — moet overeenkomen met Google Sheet.
 const HEADERS = [
-  "date","weight","alcohol","bp_sys","bp_dia",
-  "sleep_h","sleep_q","sleep_deep","sleep_rem",
-  "hrv","rhr","stress","body_battery","steps",
-  "trained","train_type","train_min","train_dist",
-  "avg_hr","max_hr","avg_pace","cadence",
-  "ground_contact","vertical_osc","vertical_ratio","stride_length","training_effect","vo2max",
-  "energy","mental_unrest","breathing","breathing_type","notes","sleep_prep",
-  "koffie","mood",
-  "hrv_weekly","hrv_5min",
-  "activities"
+  "date","weight","alcohol","bp_sys","bp_dia",                // A–E
+  "sleep_h","sleep_q","sleep_deep","sleep_rem",               // F–I
+  "hrv","hrv_7d","hrv_5min",                                  // J–L  ← nieuw
+  "rhr","stress","body_battery","steps",                      // M–P
+  "trained","train_type","train_min","train_dist",            // Q–T
+  "avg_hr","max_hr","avg_pace","cadence",                     // U–X
+  "ground_contact","vertical_osc","vertical_ratio",           // Y–AA
+  "stride_length","training_effect","vo2max",                 // AB–AD
+  "energy","mental_unrest","breathing","breathing_type",      // AE–AH
+  "notes","sleep_prep","koffie","mood",                       // AI–AL
+  "activities",                                               // AM
 ];
 
 // Plan item → entry field mapping (for auto-save)
@@ -213,7 +216,7 @@ function calcReadiness(last, entries) {
 // ── Daily plan ────────────────────────────────────────────────────────────────
 // todayData = strict today entry (null if not synced yet)
 // contextData = last known entry for readiness/HRV context
-function getDailyPlan(todayData, contextData, entries, plannedWorkouts = []) {
+function getDailyPlan(todayData, contextData, entries, plannedWorkouts = [], stepGoal = 10000) {
   const last       = contextData;
   const readiness  = calcReadiness(last, entries);
   const race1Days  = daysUntil("2026-07-05");
@@ -316,7 +319,9 @@ function getDailyPlan(todayData, contextData, entries, plannedWorkouts = []) {
     { id: "morning", cat: "Ochtend", icon: "🌅", label: "Ochtendmeting", sub: "HRV & body battery ophalen via Garmin", color: C.blue, auto: true, done: !!todayData?.hrv },
     { id: "breathing", cat: "Mindfulness", icon: "🫁", label: "Box breathing", sub: "4×4 min · 4 tellen in-hold-uit-hold", color: C.purple, done: isTrue(todayData?.breathing) },
     { ...trainTask, id: "training", done: trainDone },
-    { id: "steps", cat: "Beweging", icon: "👟", label: "Dagelijks stappendoel", sub: `${!isNaN(todaySteps) ? Math.round(todaySteps).toLocaleString("nl") : "—"} / 10.000 vandaag`, color: C.green, auto: true, done: todaySteps >= 10000 },
+    { id: "steps", cat: "Beweging", icon: "👟", label: "Dagelijks stappendoel",
+      sub: `${!isNaN(todaySteps) ? Math.round(todaySteps).toLocaleString("nl") : "—"} / ${stepGoal.toLocaleString("nl")} vandaag`,
+      color: C.green, auto: true, done: todaySteps >= stepGoal },
     { id: "kracht", cat: "Training", icon: "🏋️", label: "Kracht & soepelheid", sub: `${STRENGTH_EXERCISES.length} oefeningen · ${STRENGTH_EXERCISES.slice(0,3).map(e=>e.name).join(", ")} +meer`, color: "#FF9500", done: !!localStorage.getItem(`kracht_done_${today()}`) },
     { id: "checkin", cat: "Check-in", icon: "📋", label: "Dagelijkse check-in", sub: "Gewicht, bloeddruk, stemming invullen", color: C.blue, done: !!(todayData?.date === today() && (todayData?.mood || todayData?.bp_sys || todayData?.weight)) },
     { id: "sleep", cat: "Avond", icon: "🌙", label: "Slaapvoorbereiding", sub: sleepSub, color: C.indigo, done: sleepPrepped },
@@ -405,7 +410,7 @@ async function fetchDailyTip({ todayData, contextData, plan, planned, readiness 
   const todayWorkout = planned.find(p => p.date === today());
 
   const metrics = contextData ? [
-    contextData.hrv        && `HRV nacht ${contextData.hrv}ms / 7d ${contextData.hrv_weekly||"?"}ms / 5min ${contextData.hrv_5min||"?"}ms`,
+    contextData.hrv        && `HRV nacht ${contextData.hrv}ms / 7d ${contextData.hrv_7d||"?"}ms / 5min ${contextData.hrv_5min||"?"}ms`,
     contextData.sleep_h    && `slaap ${contextData.sleep_h}u`,
     contextData.body_battery && `battery ${contextData.body_battery}%`,
     contextData.stress     && `stress ${contextData.stress}`,
@@ -489,7 +494,7 @@ async function fetchDailyCoaching(entries) {
 VANDAAG: ${todayStr}
 RECENTE DATA (tot 14 dagen): ${JSON.stringify(recent.map(e => ({
   date: e.date, sleep_h: e.sleep_h, sleep_q: e.sleep_q,
-  hrv: e.hrv, hrv_weekly: e.hrv_weekly, rhr: e.rhr,
+  hrv: e.hrv, hrv_7d: e.hrv_7d, rhr: e.rhr,
   stress: e.stress, body_battery: e.body_battery,
   trained: e.trained, train_type: e.train_type, train_min: e.train_min,
   steps: e.steps, weight: e.weight, mood: e.mood, alcohol: e.alcohol,
@@ -924,6 +929,8 @@ export default function App() {
   const [showExercise, setShowExercise] = useState(false);
   const [viewDate,    setViewDate]    = useState(today());
   const [planned,     setPlanned]     = useState([]);
+  const [stepGoal,    setStepGoal]    = useState(() => parseInt(localStorage.getItem("step_goal") || "10000", 10));
+  const [planActivityDetail, setPlanActivityDetail] = useState(null); // modal voor Garmin plan activiteit
   const [touchStartX, setTouchStartX] = useState(null);
   const skipPrefillRef = useRef(false);
 
@@ -941,11 +948,17 @@ export default function App() {
       const [res, plannedData] = await Promise.all([sheetsGet(), sheetsGetPlanned().catch(() => [])]);
       const rows = res.values || [];
       if (rows.length >= 2) {
-        // Gebruik altijd de frontend HEADERS constant voor kolom-mapping
-        // (sheet header-rij kan verouderd zijn na toevoeging van nieuwe velden)
+        // Gebruik de werkelijke sheet-headers (rij 1) als primaire mapping
+        // zodat kolom-volgorde in de sheet leidend is. Val terug op HEADERS-index
+        // als de sheet-header niet in HEADERS voorkomt.
+        const sheetHeaders = rows[0].map(h => String(h).trim().toLowerCase());
         const data = rows.slice(1).map(r => {
           const obj = {};
-          HEADERS.forEach((h, i) => { obj[h] = r[i] ?? ""; });
+          sheetHeaders.forEach((h, i) => {
+            if (h) obj[h] = r[i] ?? "";
+          });
+          // Zorg dat alle HEADERS-velden altijd aanwezig zijn (ook als sheet-header ontbreekt)
+          HEADERS.forEach((h, i) => { if (!(h in obj)) obj[h] = r[i] ?? ""; });
           return obj;
         }).sort((a, b) => a.date.localeCompare(b.date));
         setEntries(data);
@@ -1108,12 +1121,12 @@ export default function App() {
   const race2      = daysUntil("2026-10-04");
   const readiness  = calcReadiness(contextEntry, entries);
   const eventScore = calcEventScore(entries);
-  const plan       = getDailyPlan(displayEntry, contextEntry, entries, planned);
+  const plan       = getDailyPlan(displayEntry, contextEntry, entries, planned, stepGoal);
   // HRV display: gebruik laatste entry met echte HRV-data (vandaag kan HRV nog leeg zijn)
   const hrvEntry   = [...entries].reverse().find(e => parseNum(e.hrv) > 0) || contextEntry;
-  // hrv_weekly fallback: als Garmin geen weeklyAvg stuurt (null → ""), bereken zelf uit laatste 7 nachten
+  // hrv_7d fallback: als Garmin geen weeklyAvg stuurt (null → ""), bereken zelf uit laatste 7 nachten
   const computedHrvWeekly = (() => {
-    if (parseNum(hrvEntry?.hrv_weekly) > 0) return String(parseNum(hrvEntry.hrv_weekly));
+    if (parseNum(hrvEntry?.hrv_7d) > 0) return String(parseNum(hrvEntry.hrv_7d));
     const vals = numArr(entries.slice(-7), "hrv").filter(v => v > 0);
     return vals.length >= 3 ? String(Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)) : null;
   })();
@@ -1608,8 +1621,14 @@ export default function App() {
                     {upcoming.map((p, i) => {
                       const isToday = p.date === today();
                       const isDone  = isToday && trainedToday;
+                      // Zoek bijpassende entry data voor deze datum
+                      const entryForDate = entries.find(e => e.date === p.date);
                       return (
-                      <div key={p.date + p.title} style={{ padding: "13px 16px", display: "flex", alignItems: "center", gap: 14, borderBottom: i < upcoming.length - 1 ? `1px solid ${C.border}` : "none", opacity: isDone ? 0.75 : 1 }}>
+                      <div key={p.date + p.title}
+                        onClick={() => setPlanActivityDetail({ planned: p, entry: entryForDate, isDone })}
+                        style={{ padding: "13px 16px", display: "flex", alignItems: "center", gap: 14,
+                          borderBottom: i < upcoming.length - 1 ? `1px solid ${C.border}` : "none",
+                          opacity: isDone ? 0.85 : 1, cursor: "pointer" }}>
                         <div style={{ width: 36, height: 36, borderRadius: 10,
                           background: isDone ? C.green + "20" : C.orange + "15",
                           display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
@@ -1620,18 +1639,141 @@ export default function App() {
                             {p.title}
                           </div>
                           <div style={{ fontSize: 12, color: C.text3, marginTop: 1 }}>
-                            {isDone ? "Voltooid vandaag · gesynchroniseerd" : dayLabel(p.date)}
+                            {isDone
+                              ? `✓ Voltooid · ${entryForDate?.train_dist ? entryForDate.train_dist + " km" : ""} ${entryForDate?.avg_hr ? "· " + entryForDate.avg_hr + " bpm" : ""} ${entryForDate?.avg_pace ? "· " + entryForDate.avg_pace + "/km" : ""}`.trim()
+                              : dayLabel(p.date)}
                           </div>
                         </div>
-                        {isToday && !isDone && (
-                          <div style={{ fontSize: 11, fontWeight: 600, color: C.orange, background: C.orange + "15", padding: "3px 8px", borderRadius: 20 }}>Vandaag</div>
-                        )}
-                        {isDone && (
-                          <div style={{ fontSize: 11, fontWeight: 600, color: C.green, background: C.green + "15", padding: "3px 8px", borderRadius: 20 }}>✓ Gedaan</div>
-                        )}
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          {isToday && !isDone && (
+                            <div style={{ fontSize: 11, fontWeight: 600, color: C.orange, background: C.orange + "15", padding: "3px 8px", borderRadius: 20 }}>Vandaag</div>
+                          )}
+                          {isDone && (
+                            <div style={{ fontSize: 11, fontWeight: 600, color: C.green, background: C.green + "15", padding: "3px 8px", borderRadius: 20 }}>✓ Gedaan</div>
+                          )}
+                          <svg width="7" height="12" viewBox="0 0 7 12" fill="none"><path d="M1 1l5 5-5 5" stroke={C.text3} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+                        </div>
                       </div>
                       );
                     })}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Modal: Garmin plan activiteit detail */}
+            {planActivityDetail && (() => {
+              const { planned: p, entry: e, isDone } = planActivityDetail;
+              const sportIcon = (s) => s?.includes("run") ? "🏃" : s?.includes("cycl") ? "🚴" : s?.includes("swim") ? "🏊" : "💪";
+              const isRun = (e?.train_type || p.sport || "").toLowerCase().includes("run");
+              return (
+                <div onClick={() => setPlanActivityDetail(null)} style={{
+                  position: "fixed", inset: 0, zIndex: 999,
+                  background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)",
+                  display: "flex", alignItems: "flex-end", justifyContent: "center", cursor: "pointer"
+                }}>
+                  <div onClick={ev => ev.stopPropagation()} style={{
+                    background: C.card, borderRadius: "20px 20px 0 0",
+                    width: "100%", maxWidth: 640, maxHeight: "80vh", overflowY: "auto",
+                    padding: "0 0 40px", cursor: "default"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 0" }}>
+                      <div style={{ width: 36, height: 4, borderRadius: 2, background: C.fill }} />
+                    </div>
+                    {/* Header */}
+                    <div style={{ padding: "16px 20px 20px", borderBottom: `1px solid ${C.separator}`, display: "flex", alignItems: "center", gap: 14 }}>
+                      <div style={{ width: 48, height: 48, borderRadius: 14,
+                        background: isDone ? C.green + "18" : C.orange + "18",
+                        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24, flexShrink: 0 }}>
+                        {isDone ? "✅" : sportIcon(p.sport)}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 18, fontWeight: 700 }}>{p.title}</div>
+                        <div style={{ fontSize: 13, color: C.text3, marginTop: 2 }}>
+                          {new Date(p.date + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })}
+                          {p.sport && ` · ${p.sport.replace(/_/g, " ")}`}
+                        </div>
+                      </div>
+                      <button onClick={() => setPlanActivityDetail(null)}
+                        style={{ width: 32, height: 32, borderRadius: 16, background: C.fill, border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, color: C.text3, flexShrink: 0 }}>✕</button>
+                    </div>
+
+                    <div style={{ padding: "20px 20px 0" }}>
+                      {/* Garmin resultaten (als gedaan + entry beschikbaar) */}
+                      {isDone && e && (
+                        <>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.green, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>
+                            ✓ Voltooid — Garmin resultaten
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 20 }}>
+                            {[
+                              { l: "Afstand",  v: e.train_dist,     u: "km"  },
+                              { l: "Duur",     v: e.train_min,      u: "min" },
+                              { l: "HR gem.",  v: e.avg_hr,         u: "bpm" },
+                              { l: "HR max",   v: e.max_hr,         u: "bpm" },
+                              ...(isRun ? [
+                                { l: "Tempo",  v: e.avg_pace,       u: "/km" },
+                                { l: "Cadans", v: e.cadence,        u: "spm" },
+                                { l: "GCT",    v: e.ground_contact, u: "ms"  },
+                                { l: "V. Osc", v: e.vertical_osc,   u: "cm"  },
+                                { l: "Stride", v: e.stride_length,  u: "m"   },
+                                { l: "Trng Eff", v: e.training_effect, u: "" },
+                              ] : []),
+                            ].filter(m => m.v && m.v !== "").map(m => (
+                              <div key={m.l} style={{ background: C.fill, borderRadius: 12, padding: "12px 10px", textAlign: "center" }}>
+                                <div style={{ fontSize: 11, color: C.text3, marginBottom: 4 }}>{m.l}</div>
+                                <div style={{ fontSize: 18, fontWeight: 700, color: C.text }}>
+                                  {m.v}<span style={{ fontSize: 11, color: C.text3, fontWeight: 400 }}> {m.u}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          {/* HRV van die dag */}
+                          {e.hrv && (
+                            <div style={{ background: C.fill, borderRadius: 12, padding: "12px 16px", marginBottom: 16, display: "flex", gap: 20 }}>
+                              <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 10, color: C.text3, marginBottom: 2 }}>HRV nacht</div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: C.green }}>{e.hrv} ms</div>
+                              </div>
+                              {e.hrv_7d && <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 10, color: C.text3, marginBottom: 2 }}>7d gem.</div>
+                                <div style={{ fontSize: 16, fontWeight: 700 }}>{e.hrv_7d} ms</div>
+                              </div>}
+                              {e.sleep_h && <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 10, color: C.text3, marginBottom: 2 }}>Slaap</div>
+                                <div style={{ fontSize: 16, fontWeight: 700 }}>{e.sleep_h} u</div>
+                              </div>}
+                              {e.body_battery && <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 10, color: C.text3, marginBottom: 2 }}>Battery</div>
+                                <div style={{ fontSize: 16, fontWeight: 700 }}>{e.body_battery}%</div>
+                              </div>}
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {/* Gepland maar nog niet gedaan */}
+                      {!isDone && (
+                        <>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 12 }}>
+                            Geplande training
+                          </div>
+                          <div style={{ background: C.fill, borderRadius: 12, padding: "14px 16px", marginBottom: 16 }}>
+                            <div style={{ fontSize: 14, color: C.text, lineHeight: 1.6 }}>
+                              {p.sport && <div>🏃 Sport: <strong>{p.sport.replace(/_/g, " ")}</strong></div>}
+                              <div style={{ marginTop: 8, color: C.text3, fontSize: 13 }}>
+                                Volg het Garmin Coach plan en sla de activiteit op in je Garmin horloge — data wordt automatisch gesynchroniseerd.
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+
+                      <button onClick={() => setPlanActivityDetail(null)}
+                        style={{ width: "100%", background: isDone ? C.green + "15" : C.fill, border: "none", borderRadius: 12, padding: "14px", fontSize: 15, fontWeight: 600, color: isDone ? C.green : C.text3, cursor: "pointer" }}>
+                        Sluiten
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -1832,11 +1974,11 @@ export default function App() {
         // Compute insights
         const insights = [];
 
-        // 1. HRV week-over-week — gebruik hrv_weekly (Garmin's eigen 7d rolling avg) voor juiste waarde
-        const latestHrvWeekly = [...last7].reverse().find(e => parseNum(e.hrv_weekly) > 0);
-        const prevHrvWeekly   = [...prev7].reverse().find(e => parseNum(e.hrv_weekly) > 0);
-        const hrv7a  = latestHrvWeekly ? parseNum(latestHrvWeekly.hrv_weekly) : null;
-        const hrvP7a = prevHrvWeekly   ? parseNum(prevHrvWeekly.hrv_weekly)   : null;
+        // 1. HRV week-over-week — gebruik hrv_7d (Garmin's eigen 7d rolling avg) voor juiste waarde
+        const latestHrvWeekly = [...last7].reverse().find(e => parseNum(e.hrv_7d) > 0);
+        const prevHrvWeekly   = [...prev7].reverse().find(e => parseNum(e.hrv_7d) > 0);
+        const hrv7a  = latestHrvWeekly ? parseNum(latestHrvWeekly.hrv_7d) : null;
+        const hrvP7a = prevHrvWeekly   ? parseNum(prevHrvWeekly.hrv_7d)   : null;
         if (hrv7a != null) {
           if (hrvP7a != null && Math.abs(hrv7a - hrvP7a) > 1) {
             const d = hrv7a - hrvP7a;
@@ -1978,8 +2120,8 @@ export default function App() {
                 {/* HRV chart */}
                 {numArr(last30, "hrv").length >= 2 && (() => {
                   const hrvVals = numArr(last30,"hrv");
-                  const latestWeekly = [...last30].reverse().find(e => parseNum(e.hrv_weekly) > 0);
-                  const displayHrv = latestWeekly ? parseNum(latestWeekly.hrv_weekly) : hrvVals.slice(-1)[0];
+                  const latestWeekly = [...last30].reverse().find(e => parseNum(e.hrv_7d) > 0);
+                  const displayHrv = latestWeekly ? parseNum(latestWeekly.hrv_7d) : hrvVals.slice(-1)[0];
                   return (
                   <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
@@ -2151,6 +2293,38 @@ export default function App() {
                 </div>
               </div>
             ))}
+          </div>
+
+          {/* Stappendoel */}
+          <div style={{ fontSize: 17, fontWeight: 600, margin: "24px 0 10px" }}>Dagelijks stappendoel</div>
+          <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 8 }}>
+            <div style={{ fontSize: 13, color: C.text3, marginBottom: 10 }}>
+              Stel je Garmin stappendoel in. Garmin past dit automatisch aan op basis van je vorige week.
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <input
+                type="number"
+                min="1000" max="30000" step="100"
+                value={stepGoal}
+                onChange={e => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v) && v > 0) {
+                    setStepGoal(v);
+                    localStorage.setItem("step_goal", String(v));
+                  }
+                }}
+                style={{ flex: 1, background: C.fill, border: "none", borderRadius: 10, padding: "10px 14px", fontSize: 16, fontWeight: 600, color: C.text, outline: "none" }}
+              />
+              <span style={{ fontSize: 14, color: C.text3 }}>stappen</span>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+              {[6000, 8000, 9000, 9110, 10000, 12000].map(g => (
+                <button key={g} onClick={() => { setStepGoal(g); localStorage.setItem("step_goal", String(g)); }}
+                  style={{ background: stepGoal === g ? C.blue : C.fill, color: stepGoal === g ? "#fff" : C.text3, border: "none", borderRadius: 20, padding: "4px 12px", fontSize: 13, cursor: "pointer", fontWeight: stepGoal === g ? 600 : 400 }}>
+                  {g.toLocaleString("nl")}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* App installeren */}

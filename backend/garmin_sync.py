@@ -76,10 +76,10 @@ def get_garmin_data():
         hrv = client.get_hrv_data(TODAY)
         summary = hrv.get("hrvSummary", {})
         # Gebruik `or ""` zodat None (Garmin retourneert null als data ontbreekt) ook "" wordt
-        data["hrv"]         = summary.get("lastNight")         or ""
-        data["hrv_weekly"]  = summary.get("weeklyAvg")         or ""
-        data["hrv_5min"]    = summary.get("lastNight5MinHigh") or ""
-        print(f"  ✓ HRV nacht={data['hrv']} 7d={data['hrv_weekly']} 5min={data['hrv_5min']} ms")
+        data["hrv"]      = summary.get("lastNight")         or ""
+        data["hrv_7d"]   = summary.get("weeklyAvg")         or ""
+        data["hrv_5min"] = summary.get("lastNight5MinHigh") or ""
+        print(f"  ✓ HRV nacht={data['hrv']} 7d={data['hrv_7d']} 5min={data['hrv_5min']} ms")
         print(f"  DEBUG hrv raw summary keys: {list(summary.keys())}")
     except Exception as e:
         print(f"  ✗ HRV: {e}")
@@ -285,18 +285,21 @@ def write_planned_workouts(client):
     print(f"  ✓ planned_workouts tab bijgewerkt ({len(items)} rijen)")
 
 
-# ── Headers (moeten overeenkomen met de app) ──────────────────────────────────
+# ── Headers (moeten overeenkomen met de app én de Google Sheet kolomvolgorde) ──
+# Kolom A-J: datum t/m hrv, dan K=hrv_7d L=hrv_5min (door gebruiker aangemaakt),
+# dan M=rhr N=stress O=body_battery P=steps, enz.
 HEADERS = [
-    "date", "weight", "alcohol", "bp_sys", "bp_dia",
-    "sleep_h", "sleep_q", "sleep_deep", "sleep_rem",
-    "hrv", "rhr", "stress", "body_battery", "steps",
-    "trained", "train_type", "train_min", "train_dist",
-    "avg_hr", "max_hr", "avg_pace", "cadence",
-    "ground_contact", "vertical_osc", "vertical_ratio", "stride_length", "training_effect", "vo2max",
-    "energy", "mental_unrest", "breathing", "breathing_type", "notes", "sleep_prep",
-    "koffie", "mood",
-    "hrv_weekly", "hrv_5min",
-    "activities"
+    "date", "weight", "alcohol", "bp_sys", "bp_dia",          # A–E
+    "sleep_h", "sleep_q", "sleep_deep", "sleep_rem",           # F–I
+    "hrv", "hrv_7d", "hrv_5min",                               # J–L  ← nieuw
+    "rhr", "stress", "body_battery", "steps",                  # M–P
+    "trained", "train_type", "train_min", "train_dist",        # Q–T
+    "avg_hr", "max_hr", "avg_pace", "cadence",                 # U–X
+    "ground_contact", "vertical_osc", "vertical_ratio",        # Y–AA
+    "stride_length", "training_effect", "vo2max",              # AB–AD
+    "energy", "mental_unrest", "breathing", "breathing_type",  # AE–AH
+    "notes", "sleep_prep", "koffie", "mood",                   # AI–AL
+    "activities",                                               # AM
 ]
 
 
