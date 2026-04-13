@@ -75,8 +75,10 @@ def get_garmin_data():
     try:
         hrv = client.get_hrv_data(TODAY)
         summary = hrv.get("hrvSummary", {})
-        data["hrv"] = summary.get("lastNight", summary.get("lastNight5MinHigh", ""))
-        print(f"  ✓ HRV: {data['hrv']} ms")
+        # weeklyAvg = 7-daags gemiddelde (wat Garmin toont als HRV-status)
+        # lastNight = nachtmeting van gisternacht (kan sterk variëren)
+        data["hrv"] = summary.get("weeklyAvg", summary.get("lastNight", summary.get("lastNight5MinHigh", "")))
+        print(f"  ✓ HRV weeklyAvg={summary.get('weeklyAvg')} lastNight={summary.get('lastNight')} → opgeslagen: {data['hrv']} ms")
     except Exception as e:
         print(f"  ✗ HRV: {e}")
 
