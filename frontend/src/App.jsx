@@ -70,11 +70,19 @@ async function sheetsAppend(row) {
 
 async function sheetsUpdate(rowIdx, row) {
   const token = await getJWT();
-  const range = `${TAB}!A${rowIdx}:AG${rowIdx}`;
-  await fetch(
+  // HEADERS has 34 columns (A–AH), range must match exactly
+  const lastCol = String.fromCharCode(64 + Math.ceil(row.length / 26)) + String.fromCharCode(64 + (row.length % 26 || 26));
+  // Simpler: hardcode AH for 34 columns
+  const range = `${TAB}!A${rowIdx}:AH${rowIdx}`;
+  const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
     { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ values: [row] }) }
   );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    console.error("sheetsUpdate error:", res.status, err);
+    throw new Error(`Sheets update failed: ${res.status} ${err?.error?.message || ""}`);
+  }
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
