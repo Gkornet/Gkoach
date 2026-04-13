@@ -1,24 +1,36 @@
 # .github/workflows/garmin_sync.yml
 # ─────────────────────────────────────────────────────────────────────────────
-# Draait elke ochtend om 06:30 Nederlandse tijd (05:30 UTC)
+# Draait 4x per dag op Amsterdam-tijdzone (CET = UTC+1, CEST = UTC+2)
+# Twee sets cron-tijden: zomer (CEST apr-okt) en winter (CET nov-mrt)
 # Haalt Garmin-data op en schrijft naar Google Sheets
-# Geen server nodig — volledig gratis via GitHub Actions
 # ─────────────────────────────────────────────────────────────────────────────
 
 name: Garmin Daily Sync
 
 on:
   schedule:
-    - cron: '30 5 * * *'   # 07:30 CEST – ochtend (HRV, slaap, battery na opstaan)
-    - cron: '30 10 * * *'  # 12:30 CEST – middag  (stappen, activiteiten, stress update)
-    - cron: '30 17 * * *'  # 19:30 CEST – avond   (eindstand stappen, activiteiten)
-    - cron: '30 20 * * *'  # 22:30 CEST – nacht   (battery voor bed, geplande workouts)
-  workflow_dispatch:  # Handmatig triggeren via GitHub UI
+    # ── Zomer CEST (UTC+2) ── apr t/m okt
+    - cron: '30 5 * 4-10 *'   # 07:30 CEST – ochtend
+    - cron: '30 10 * 4-10 *'  # 12:30 CEST – middag
+    - cron: '30 17 * 4-10 *'  # 19:30 CEST – avond
+    - cron: '30 20 * 4-10 *'  # 22:30 CEST – nacht
+    # ── Winter CET (UTC+1) ── nov t/m mrt
+    - cron: '30 6 * 11-12 *'  # 07:30 CET – ochtend
+    - cron: '30 11 * 11-12 *' # 12:30 CET – middag
+    - cron: '30 18 * 11-12 *' # 19:30 CET – avond
+    - cron: '30 21 * 11-12 *' # 22:30 CET – nacht
+    - cron: '30 6 * 1-3 *'    # 07:30 CET – ochtend
+    - cron: '30 11 * 1-3 *'   # 12:30 CET – middag
+    - cron: '30 18 * 1-3 *'   # 19:30 CET – avond
+    - cron: '30 21 * 1-3 *'   # 22:30 CET – nacht
+  workflow_dispatch:  # Handmatig triggeren via GitHub UI of API
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TZ: Europe/Amsterdam   # Zorgt dat datetime.date.today() Amsterdam-tijd geeft
 
     steps:
       - name: Checkout code

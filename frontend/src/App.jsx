@@ -918,6 +918,7 @@ export default function App() {
   const [saveMsg,   setSaveMsg]   = useState("");
   const [sheetMode, setSheetMode] = useState(!!SHEET_ID);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [ghSyncing,   setGhSyncing]   = useState(false); // GitHub Actions sync bezig
   const [planDone,    setPlanDone]    = useState({});
   const [taskDetail,  setTaskDetail]  = useState(null);
   const [showExercise, setShowExercise] = useState(false);
@@ -959,6 +960,26 @@ export default function App() {
   }, [sheetMode]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // Triggert de GitHub Actions garmin_sync workflow via Vercel API-route
+  const triggerGarminSync = useCallback(async () => {
+    setGhSyncing(true);
+    try {
+      const res = await fetch("/api/trigger-sync", { method: "POST" });
+      if (res.ok) {
+        // Sync gestart — wacht 18s dan laad nieuwe data
+        setTimeout(() => { loadData(); setGhSyncing(false); }, 18000);
+      } else {
+        console.warn("Sync trigger mislukt:", await res.text());
+        setGhSyncing(false);
+        loadData(); // gewoon herladen als fallback
+      }
+    } catch (e) {
+      console.warn("Sync trigger fout:", e);
+      setGhSyncing(false);
+      loadData();
+    }
+  }, [loadData]);
 
   // Auto-refresh: elke 5 minuten én bij terugkeren naar de app
   useEffect(() => {
@@ -1264,6 +1285,7 @@ export default function App() {
         input:focus, select:focus, textarea:focus { background: rgba(120,120,128,0.14) !important; }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulse  { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        @keyframes spin   { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .fade { animation: fadeUp .3s ease; }
         ::-webkit-scrollbar { display: none; }
       `}</style>
@@ -1582,9 +1604,16 @@ export default function App() {
             })()}
 
             {sheetMode && (
-              <button onClick={loadData} style={{ width: "100%", background: C.fill, border: "none", borderRadius: 12, padding: "12px 16px", fontSize: 14, color: C.text3, cursor: "pointer", marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                <span>↻</span>
-                <span>Ververs data{lastRefresh ? ` · ${lastRefresh.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
+              <button
+                onClick={triggerGarminSync}
+                disabled={ghSyncing}
+                style={{ width: "100%", background: ghSyncing ? C.green + "20" : C.fill, border: "none", borderRadius: 12, padding: "12px 16px", fontSize: 14, color: ghSyncing ? C.green : C.text3, cursor: ghSyncing ? "default" : "pointer", marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all .3s" }}>
+                <span style={{ display: "inline-block", animation: ghSyncing ? "spin 1s linear infinite" : "none" }}>↻</span>
+                <span>
+                  {ghSyncing
+                    ? "Garmin sync bezig…"
+                    : `Ververs data${lastRefresh ? ` · ${lastRefresh.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}` : ""}`}
+                </span>
               </button>
             )}
             {!sheetMode && (
