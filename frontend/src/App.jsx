@@ -104,6 +104,76 @@ const HEADERS = [
 // Plan item → entry field mapping (for auto-save)
 const PLAN_FIELD = { breathing: "breathing", sleep: "sleep_prep" };
 
+// ── Kracht & soepelheid oefeningen ───────────────────────────────────────────
+const STRENGTH_EXERCISES = [
+  {
+    id: "squat", name: "Squat", sets: "3 sets", reps: "12 herhalingen",
+    target: "Benen & billen", color: "#FF9500",
+    cue: "Zak door je knieën alsof je op een stoel gaat zitten. Rug recht, knieën boven je tenen.",
+    steps: [
+      "Sta schouderbreed, tenen iets naar buiten gedraaid",
+      "Armen gestrekt voor je of gevouwen voor borst",
+      "Zak langzaam (3 tellen) tot dijen parallel aan de grond",
+      "Duw via je hielen omhoog — adem uit bij het opstaan",
+    ]
+  },
+  {
+    id: "bridge", name: "Glute bridge", sets: "3 sets", reps: "15 herhalingen",
+    target: "Billen & onderrug", color: "#34C759",
+    cue: "Lig op je rug, voeten plat op de grond. Druk heupen omhoog tot een rechte lijn. Essentieel bij zittend werk.",
+    steps: [
+      "Lig op je rug, knieën gebogen, voeten plat heupbreed op de grond",
+      "Armen langs je lichaam, handpalmen naar beneden",
+      "Druk heupen omhoog — knijp je billen samen bovenaan",
+      "Houd 1 seconde vast en zak langzaam — zonder de grond te raken",
+    ]
+  },
+  {
+    id: "pushup", name: "Push-up", sets: "3 sets", reps: "10 herhalingen",
+    target: "Borst, schouders & armen", color: "#007AFF",
+    cue: "Begin op knieën als het te zwaar is. Lichaam als een rechte plank — core aangespannen.",
+    steps: [
+      "Handen iets breder dan schouders, op knieën of op de tenen",
+      "Lichaam in één rechte lijn — core aanspannen",
+      "Zak langzaam (3 tellen) naar beneden, ellebogen 45° van je lichaam",
+      "Duw krachtig omhoog — adem uit bij het opstaan",
+    ]
+  },
+  {
+    id: "hipflex", name: "Heupflexor rek", sets: "2 sets", reps: "30 sec per kant",
+    target: "Heupen — essentieel bij zittend werk", color: "#AF52DE",
+    cue: "Heupflexoren korten in bij veel zitten. Deze rek herstelt de balans en voorkomt lage rugpijn.",
+    steps: [
+      "Neem een grote stap vooruit — achterste knie op de grond",
+      "Kantel je bekken licht naar achteren (holle rug wegnemen)",
+      "Voel de diepe rek voorin je achterste heup",
+      "Houd 30 seconden vast, adem rustig door — wissel van been",
+    ]
+  },
+  {
+    id: "catcow", name: "Kat-koe", sets: "2 sets", reps: "10 herhalingen",
+    target: "Rugmobiliteit & wervelkolom", color: "#5AC8FA",
+    cue: "Beweeg de hele wervelkolom. Inademen = koe (rug hol), uitademen = kat (rug bol). Langzaam en bewust.",
+    steps: [
+      "Op handen en knieën — handen onder schouders, knieën onder heupen",
+      "INADEMEN (koe): rug hol, hoofd en staartbeen omhoog",
+      "UITADEMEN (kat): rug bol omhoog, hoofd omlaag, navel optrekken",
+      "Wissel vloeiend met je ademhaling — 10 langzame herhalingen",
+    ]
+  },
+  {
+    id: "hamstring", name: "Hamstring rek", sets: "2 sets", reps: "30 sec per kant",
+    target: "Achterkant benen", color: "#FF3B30",
+    cue: "Zachte constante rek — geen pijn. Hamstrings worden stijf bij zitten en zijn cruciaal voor hardlopen.",
+    steps: [
+      "Lig op je rug",
+      "Hef één been gestrekt omhoog",
+      "Trek met beide handen (of een band) het been richting je borst",
+      "Voel de rek achter je dijbeen — houd 30 sec — wissel van been",
+    ]
+  },
+];
+
 const today     = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const fmt       = (d) => new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "short" });
 // Sheets can return "5,52" (Dutch locale) or "5.52" — handle both
@@ -209,6 +279,7 @@ function getDailyPlan(todayData, contextData, entries) {
     { id: "breathing", cat: "Mindfulness", icon: "🫁", label: "Box breathing", sub: "4×4 min · 4 tellen in-hold-uit-hold", color: C.purple, done: isTrue(todayData?.breathing) },
     { ...trainTask, id: "training", done: trainDone },
     { id: "steps", cat: "Beweging", icon: "👟", label: "Dagelijks stappendoel", sub: `${!isNaN(todaySteps) ? Math.round(todaySteps).toLocaleString("nl") : "—"} / 10.000 vandaag`, color: C.green, auto: true, done: todaySteps >= 10000 },
+    { id: "kracht", cat: "Training", icon: "🏋️", label: "Kracht & soepelheid", sub: `${STRENGTH_EXERCISES.length} oefeningen · ${STRENGTH_EXERCISES.slice(0,3).map(e=>e.name).join(", ")} +meer`, color: "#FF9500", done: !!localStorage.getItem(`kracht_done_${today()}`) },
     { id: "checkin", cat: "Check-in", icon: "📋", label: "Dagelijkse check-in", sub: "Gewicht, bloeddruk, stemming invullen", color: C.blue, done: !!(todayData?.date === today() && (todayData?.mood || todayData?.bp_sys || todayData?.weight)) },
     { id: "sleep", cat: "Avond", icon: "🌙", label: "Slaapvoorbereiding", sub: sleepSub, color: C.indigo, done: sleepPrepped },
   ];
@@ -574,6 +645,202 @@ const MOOD_OPTIONS = [
   { v: 4, emoji: "🙂", label: "Goed" },
   { v: 5, emoji: "😊", label: "Top" },
 ];
+// ── Exercise animation SVGs ───────────────────────────────────────────────────
+const ExerciseAnim = ({ id, color: c }) => {
+  const sp = { stroke: c, strokeWidth: 3.5, strokeLinecap: "round", strokeLinejoin: "round", fill: "none" };
+  switch (id) {
+    case "squat": return (
+      <svg viewBox="0 0 80 100" width="80" height="100" style={{ display: "block", margin: "0 auto" }}>
+        <style>{`@keyframes exsq{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.78)}}`}</style>
+        <g {...sp} style={{ animation: "exsq 2.2s ease-in-out infinite", transformOrigin: "40px 93px" }}>
+          <circle cx="40" cy="11" r="9" fill={c + "25"} stroke={c} />
+          <line x1="40" y1="20" x2="40" y2="52" />
+          <line x1="40" y1="31" x2="24" y2="45" />
+          <line x1="40" y1="31" x2="56" y2="45" />
+          <line x1="40" y1="52" x2="26" y2="72" />
+          <line x1="26" y1="72" x2="20" y2="93" />
+          <line x1="40" y1="52" x2="54" y2="72" />
+          <line x1="54" y1="72" x2="60" y2="93" />
+        </g>
+      </svg>
+    );
+    case "bridge": return (
+      <svg viewBox="0 0 140 80" width="140" height="80" style={{ display: "block", margin: "0 auto" }}>
+        <style>{`@keyframes exbr{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}`}</style>
+        <line {...sp} x1="8" y1="70" x2="135" y2="70" strokeOpacity="0.2" />
+        <circle {...sp} cx="14" cy="56" r="8" fill={c + "25"} />
+        <line {...sp} x1="22" y1="56" x2="55" y2="56" />
+        <g style={{ animation: "exbr 2.2s ease-in-out infinite", transformOrigin: "72px 56px" }}>
+          <line {...sp} x1="55" y1="56" x2="72" y2="42" />
+          <line {...sp} x1="72" y1="42" x2="90" y2="56" />
+        </g>
+        <line {...sp} x1="90" y1="56" x2="102" y2="70" />
+        <line {...sp} x1="102" y1="70" x2="125" y2="56" />
+      </svg>
+    );
+    case "pushup": return (
+      <svg viewBox="0 0 140 80" width="140" height="80" style={{ display: "block", margin: "0 auto" }}>
+        <style>{`@keyframes expu{0%,100%{transform:translateY(0)}50%{transform:translateY(14px)}}`}</style>
+        <line {...sp} x1="26" y1="68" x2="130" y2="68" strokeOpacity="0.2" />
+        <g {...sp} style={{ animation: "expu 2.2s ease-in-out infinite", transformOrigin: "75px 68px" }}>
+          <circle cx="16" cy="34" r="8" fill={c + "25"} stroke={c} />
+          <line x1="24" y1="34" x2="110" y2="34" />
+          <line x1="36" y1="34" x2="32" y2="58" />
+          <line x1="55" y1="34" x2="50" y2="58" />
+          <line x1="110" y1="34" x2="118" y2="52" />
+          <line x1="118" y1="52" x2="128" y2="44" />
+        </g>
+      </svg>
+    );
+    case "hipflex": return (
+      <svg viewBox="0 0 120 110" width="120" height="110" style={{ display: "block", margin: "0 auto" }}>
+        <style>{`@keyframes exhf{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}`}</style>
+        <line {...sp} x1="10" y1="98" x2="112" y2="98" strokeOpacity="0.2" />
+        <g {...sp} style={{ animation: "exhf 3s ease-in-out infinite", transformOrigin: "58px 55px" }}>
+          <circle cx="58" cy="10" r="9" fill={c + "25"} stroke={c} />
+          <line x1="58" y1="19" x2="58" y2="52" />
+          <line x1="58" y1="52" x2="32" y2="76" />
+          <line x1="32" y1="76" x2="18" y2="98" />
+          <line x1="58" y1="52" x2="82" y2="76" />
+          <line x1="82" y1="76" x2="90" y2="98" />
+          <circle cx="82" cy="76" r="5" fill={c + "40"} stroke={c} strokeWidth="2.5" />
+        </g>
+      </svg>
+    );
+    case "catcow": return (
+      <svg viewBox="0 0 140 80" width="140" height="80" style={{ display: "block", margin: "0 auto" }}>
+        <style>{`@keyframes excc1{0%,100%{opacity:1}45%,55%{opacity:0}}@keyframes excc2{0%,100%{opacity:0}45%,55%{opacity:1}}`}</style>
+        <line {...sp} x1="22" y1="68" x2="118" y2="68" strokeOpacity="0.2" />
+        <circle {...sp} cx="14" cy="48" r="7" fill={c + "25"} />
+        <line {...sp} x1="20" y1="42" x2="130" y2="42" strokeOpacity="0" />
+        <path {...sp} d="M 20 48 Q 70 20 125 48" style={{ animation: "excc1 2.5s ease-in-out infinite" }} />
+        <path {...sp} d="M 20 48 Q 70 62 125 48" style={{ animation: "excc2 2.5s ease-in-out infinite" }} />
+        <line {...sp} x1="35" y1="50" x2="32" y2="68" />
+        <line {...sp} x1="52" y1="46" x2="50" y2="68" />
+        <line {...sp} x1="80" y1="46" x2="78" y2="68" />
+        <line {...sp} x1="97" y1="50" x2="100" y2="68" />
+        <line {...sp} x1="125" y1="48" x2="135" y2="38" />
+      </svg>
+    );
+    case "hamstring": return (
+      <svg viewBox="0 0 140 80" width="140" height="80" style={{ display: "block", margin: "0 auto" }}>
+        <style>{`@keyframes exhs{0%,100%{transform:rotate(-10deg)}50%{transform:rotate(-40deg)}}`}</style>
+        <line {...sp} x1="8" y1="70" x2="135" y2="70" strokeOpacity="0.2" />
+        <circle {...sp} cx="14" cy="58" r="8" fill={c + "25"} />
+        <line {...sp} x1="22" y1="58" x2="85" y2="58" />
+        <g style={{ animation: "exhs 2.5s ease-in-out infinite", transformOrigin: "75px 58px" }}>
+          <line {...sp} x1="75" y1="58" x2="108" y2="28" />
+        </g>
+        <line {...sp} x1="75" y1="58" x2="118" y2="63" />
+        <line {...sp} x1="48" y1="54" x2="66" y2="35" strokeOpacity="0.35" strokeDasharray="5 4" />
+      </svg>
+    );
+    default: return null;
+  }
+};
+
+// ── Exercise modal ─────────────────────────────────────────────────────────────
+const ExerciseModal = ({ onClose, onDone }) => {
+  const [idx, setIdx] = useState(0);
+  const [stepsOpen, setStepsOpen] = useState(false);
+  const ex = STRENGTH_EXERCISES[idx];
+  const isLast = idx === STRENGTH_EXERCISES.length - 1;
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, zIndex: 999,
+      background: "rgba(0,0,0,0.5)", backdropFilter: "blur(6px)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: "#1C1C1E", borderRadius: "24px 24px 0 0",
+        width: "100%", maxWidth: 640, maxHeight: "92vh",
+        overflowY: "auto", paddingBottom: 40,
+        fontFamily: "system-ui, -apple-system, sans-serif",
+      }}>
+        {/* Handle + close */}
+        <div style={{ display: "flex", justifyContent: "center", padding: "14px 0 0" }}>
+          <div style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255,255,255,0.2)" }} />
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 20px 0" }}>
+          <div style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>Kracht & soepelheid</div>
+          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: 15, background: "rgba(255,255,255,0.12)", border: "none", cursor: "pointer", color: "rgba(255,255,255,0.7)", fontSize: 14, display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+        </div>
+
+        {/* Progress dots */}
+        <div style={{ display: "flex", justifyContent: "center", gap: 6, padding: "16px 0 0" }}>
+          {STRENGTH_EXERCISES.map((_, i) => (
+            <div key={i} onClick={() => { setIdx(i); setStepsOpen(false); }} style={{
+              width: i === idx ? 20 : 7, height: 7, borderRadius: 4,
+              background: i === idx ? ex.color : "rgba(255,255,255,0.2)",
+              transition: "all .3s", cursor: "pointer",
+            }} />
+          ))}
+        </div>
+
+        {/* Animation area */}
+        <div style={{ padding: "28px 20px 20px", display: "flex", justifyContent: "center", alignItems: "center", minHeight: 140 }}>
+          <ExerciseAnim id={ex.id} color={ex.color} />
+        </div>
+
+        {/* Exercise info */}
+        <div style={{ padding: "0 20px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+            <div style={{ fontSize: 22, fontWeight: 700, color: "#FFF", flex: 1 }}>{ex.name}</div>
+            <div style={{ background: ex.color + "30", borderRadius: 10, padding: "4px 10px", fontSize: 12, fontWeight: 700, color: ex.color, flexShrink: 0, marginLeft: 12 }}>
+              {ex.sets} · {ex.reps}
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: ex.color, fontWeight: 600, marginBottom: 10 }}>{ex.target}</div>
+          <div style={{ fontSize: 15, color: "rgba(255,255,255,0.8)", lineHeight: 1.6, marginBottom: 20 }}>{ex.cue}</div>
+
+          {/* Expandable steps */}
+          <button onClick={() => setStepsOpen(o => !o)} style={{
+            width: "100%", background: "rgba(255,255,255,0.08)", border: "none", borderRadius: 14,
+            padding: "13px 16px", color: "rgba(255,255,255,0.85)", fontSize: 15, fontWeight: 600,
+            cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center",
+            marginBottom: stepsOpen ? 0 : 16,
+          }}>
+            <span>Hoe doe je het</span>
+            <span style={{ fontSize: 12, transform: stepsOpen ? "rotate(180deg)" : "none", transition: "transform .2s" }}>▼</span>
+          </button>
+          {stepsOpen && (
+            <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "0 0 14px 14px", padding: "12px 16px", marginBottom: 16 }}>
+              {ex.steps.map((s, i) => (
+                <div key={i} style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: i < ex.steps.length - 1 ? 12 : 0 }}>
+                  <div style={{ width: 22, height: 22, borderRadius: 11, background: ex.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#FFF", flexShrink: 0, marginTop: 1 }}>{i + 1}</div>
+                  <div style={{ fontSize: 14, color: "rgba(255,255,255,0.8)", lineHeight: 1.5 }}>{s}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Navigation */}
+          <div style={{ display: "flex", gap: 10 }}>
+            {idx > 0 && (
+              <button onClick={() => { setIdx(i => i - 1); setStepsOpen(false); }} style={{
+                flex: 1, background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 14,
+                padding: "14px", fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.7)", cursor: "pointer",
+              }}>← Vorige</button>
+            )}
+            {!isLast ? (
+              <button onClick={() => { setIdx(i => i + 1); setStepsOpen(false); }} style={{
+                flex: 2, background: ex.color, border: "none", borderRadius: 14,
+                padding: "14px", fontSize: 16, fontWeight: 600, color: "#FFF", cursor: "pointer",
+              }}>Volgende →</button>
+            ) : (
+              <button onClick={onDone} style={{
+                flex: 2, background: "#34C759", border: "none", borderRadius: 14,
+                padding: "14px", fontSize: 16, fontWeight: 700, color: "#FFF", cursor: "pointer",
+              }}>✓ Klaar!</button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const MoodPicker = ({ value, onChange }) => (
   <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
     {MOOD_OPTIONS.map(m => {
@@ -615,6 +882,7 @@ export default function App() {
   const [lastRefresh, setLastRefresh] = useState(null);
   const [planDone,    setPlanDone]    = useState({});
   const [taskDetail,  setTaskDetail]  = useState(null);
+  const [showExercise, setShowExercise] = useState(false);
   const [viewDate,    setViewDate]    = useState(today());
   const [planned,     setPlanned]     = useState([]);
   const [touchStartX, setTouchStartX] = useState(null);
@@ -927,6 +1195,16 @@ export default function App() {
   return (
     <div style={{ fontFamily: "-apple-system, 'SF Pro Display', system-ui, sans-serif", background: C.bg, minHeight: "100vh", color: C.text }}>
       {TaskModal}
+      {showExercise && (
+        <ExerciseModal
+          onClose={() => setShowExercise(false)}
+          onDone={() => {
+            localStorage.setItem(`kracht_done_${today()}`, "true");
+            setPlanDone(p => ({ ...p, kracht: true }));
+            setShowExercise(false);
+          }}
+        />
+      )}
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
         input, select, textarea {
@@ -1071,7 +1349,7 @@ export default function App() {
               {plan.map((task, i) => {
                 const done = task.done || !!planDone[task.id];
                 return (
-                  <div key={task.id} onClick={() => setTaskDetail({ ...task, done })}
+                  <div key={task.id} onClick={() => task.id === "kracht" ? setShowExercise(true) : setTaskDetail({ ...task, done })}
                     style={{
                       padding: "14px 16px", display: "flex", alignItems: "center", gap: 14,
                       cursor: "pointer",
