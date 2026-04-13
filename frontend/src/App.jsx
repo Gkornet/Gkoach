@@ -6,7 +6,7 @@ const SA_EMAIL   = import.meta.env.VITE_GOOGLE_SERVICE_ACCOUNT_EMAIL;
 const SA_KEY     = import.meta.env.VITE_GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n").replace(/\r/g, "");
 const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_API_KEY;
 const TAB        = "coach_data";
-const RANGE      = `${TAB}!A:AM`; // AM = kolom 39, moet overeenkomen met HEADERS.length
+const RANGE      = `${TAB}!A:AN`; // AN = kolom 40 (incl. step_goal), moet overeenkomen met HEADERS.length
 const PLANNED_TAB   = "planned_workouts";
 const PLANNED_RANGE = `${PLANNED_TAB}!A:D`;
 
@@ -102,6 +102,7 @@ const HEADERS = [
   "energy","mental_unrest","breathing","breathing_type",      // AE–AH
   "notes","sleep_prep","koffie","mood",                       // AI–AL
   "activities",                                               // AM
+  "step_goal",                                               // AN
 ];
 
 // Plan item → entry field mapping (for auto-save)
@@ -410,7 +411,7 @@ async function fetchDailyTip({ todayData, contextData, plan, planned, readiness 
   const todayWorkout = planned.find(p => p.date === today());
 
   const metrics = contextData ? [
-    contextData.hrv        && `HRV nacht ${contextData.hrv}ms / 7d ${contextData.hrv_7d||"?"}ms / 5min ${contextData.hrv_5min||"?"}ms`,
+    (contextData.hrv || contextData.hrv_7d) && `HRV nacht ${contextData.hrv||"?"}ms / 7d ${contextData.hrv_7d||computedHrv7d||"?"}ms / 5min ${contextData.hrv_5min||"?"}ms`,
     contextData.sleep_h    && `slaap ${contextData.sleep_h}u`,
     contextData.body_battery && `battery ${contextData.body_battery}%`,
     contextData.stress     && `stress ${contextData.stress}`,
@@ -975,22 +976,24 @@ export default function App() {
   useEffect(() => { loadData(); }, [loadData]);
 
   // Triggert de GitHub Actions garmin_sync workflow via Vercel API-route
+  // + herlaadt altijd meteen de data uit de sheet
   const triggerGarminSync = useCallback(async () => {
     setGhSyncing(true);
+    // Herlaad direct (pikt laatste sheet-data op, ongeacht sync)
+    await loadData();
     try {
       const res = await fetch("/api/trigger-sync", { method: "POST" });
       if (res.ok) {
-        // Sync gestart — wacht 18s dan laad nieuwe data
-        setTimeout(() => { loadData(); setGhSyncing(false); }, 18000);
+        // Sync gestart — wacht 25s en laad dan opnieuw (verse Garmin data)
+        setTimeout(async () => { await loadData(); setGhSyncing(false); }, 25000);
       } else {
-        console.warn("Sync trigger mislukt:", await res.text());
+        const err = await res.text().catch(() => "onbekende fout");
+        console.warn("Garmin sync trigger mislukt:", err);
         setGhSyncing(false);
-        loadData(); // gewoon herladen als fallback
       }
     } catch (e) {
-      console.warn("Sync trigger fout:", e);
+      console.warn("Garmin sync trigger fout:", e);
       setGhSyncing(false);
-      loadData();
     }
   }, [loadData]);
 
@@ -1121,14 +1124,22 @@ export default function App() {
   const race2      = daysUntil("2026-10-04");
   const readiness  = calcReadiness(contextEntry, entries);
   const eventScore = calcEventScore(entries);
-  const plan       = getDailyPlan(displayEntry, contextEntry, entries, planned, stepGoal);
-  // HRV display: gebruik laatste entry met echte HRV-data (vandaag kan HRV nog leeg zijn)
-  const hrvEntry   = [...entries].reverse().find(e => parseNum(e.hrv) > 0) || contextEntry;
-  // hrv_7d fallback: als Garmin geen weeklyAvg stuurt (null → ""), bereken zelf uit laatste 7 nachten
-  const computedHrvWeekly = (() => {
-    if (parseNum(hrvEntry?.hrv_7d) > 0) return String(parseNum(hrvEntry.hrv_7d));
-    const vals = numArr(entries.slice(-7), "hrv").filter(v => v > 0);
-    return vals.length >= 3 ? String(Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)) : null;
+  // Step goal: gebruik Garmin-waarde uit sheet als beschikbaar, anders localStorage instelling
+  const effectiveStepGoal = parseNum(todayEntry?.step_goal) > 0
+    ? parseNum(todayEntry.step_goal)
+    : stepGoal;
+  const plan       = getDailyPlan(displayEntry, contextEntry, entries, planned, effectiveStepGoal);
+  // HRV display: elk veld onafhankelijk zoeken in meest recente entry met die waarde
+  // (vandaag kan hrv-nacht leeg zijn terwijl hrv_7d en hrv_5min wel gevuld zijn)
+  const rev = [...entries].reverse();
+  const hrvNachtEntry = rev.find(e => parseNum(e.hrv)     > 0) || contextEntry;
+  const hrv7dEntry    = rev.find(e => parseNum(e.hrv_7d)  > 0) || null;
+  const hrv5minEntry  = rev.find(e => parseNum(e.hrv_5min)> 0) || null;
+  // hrv_7d fallback: bereken zelf als Garmin-waarde ontbreekt (heb je ≥2 nacht-waarden nodig)
+  const computedHrv7d = (() => {
+    if (parseNum(hrv7dEntry?.hrv_7d) > 0) return String(parseNum(hrv7dEntry.hrv_7d));
+    const vals = numArr(entries.slice(-14), "hrv").filter(v => v > 0);
+    return vals.length >= 2 ? String(Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)) : null;
   })();
   const doneTasks  = plan.filter(t => t.done || planDone[t.id]).length;
 
@@ -1383,9 +1394,9 @@ export default function App() {
                   <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
                     <span style={{ fontSize: 11, color: C.text3, alignSelf: "center" }}>HRV</span>
                     {[
-                      { l: "nacht", v: hrvEntry?.hrv        },
-                      { l: "7d",    v: computedHrvWeekly    },
-                      { l: "5min",  v: hrvEntry?.hrv_5min   },
+                      { l: "nacht", v: hrvNachtEntry?.hrv  },
+                      { l: "7d",    v: computedHrv7d        },
+                      { l: "5min",  v: hrv5minEntry?.hrv_5min },
                     ].map(m => {
                       const val = parseNum(m.v);
                       return (

@@ -84,13 +84,14 @@ def get_garmin_data():
     except Exception as e:
         print(f"  ✗ HRV: {e}")
 
-    # Rusthartslag + stress + body battery
+    # Rusthartslag + stress + body battery + stappendoel
     try:
         stats = client.get_stats(TODAY)
         data["rhr"]          = stats.get("restingHeartRate", "")
         data["stress"]       = stats.get("averageStressLevel", "")
         data["body_battery"] = stats.get("bodyBatteryChargedValue", "")
-        print(f"  ✓ RHR: {data['rhr']}, Stress: {data['stress']}, Battery: {data['body_battery']}")
+        data["step_goal"]    = stats.get("dailyStepGoal", "")
+        print(f"  ✓ RHR: {data['rhr']}, Stress: {data['stress']}, Battery: {data['body_battery']}, Stappendoel: {data['step_goal']}")
     except Exception as e:
         print(f"  ✗ Stats: {e}")
 
@@ -113,8 +114,7 @@ def get_garmin_data():
             start = a.get("startTimeLocal", a.get("startTimeGMT", ""))
             return str(start)[:10]
         activities = [a for a in all_fetched if activity_date(a) == TODAY]
-        if not activities:
-            activities = all_fetched  # fallback: gebruik alles als filter leeg geeft
+        # Geen fallback naar gisteren — als er vandaag niets is, blijft trained=False
         print(f"  → {len(all_fetched)} activiteiten opgehaald, {len(activities)} van vandaag ({TODAY})")
 
         # Sla alle activiteiten op als JSON-lijst
@@ -300,6 +300,7 @@ HEADERS = [
     "energy", "mental_unrest", "breathing", "breathing_type",  # AE–AH
     "notes", "sleep_prep", "koffie", "mood",                   # AI–AL
     "activities",                                               # AM
+    "step_goal",                                               # AN
 ]
 
 
