@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 
 // ── Google Sheets API ─────────────────────────────────────────────────────────
 const SHEET_ID   = import.meta.env.VITE_GOOGLE_SHEET_ID;
@@ -618,6 +618,7 @@ export default function App() {
   const [viewDate,    setViewDate]    = useState(today());
   const [planned,     setPlanned]     = useState([]);
   const [touchStartX, setTouchStartX] = useState(null);
+  const skipPrefillRef = useRef(false);
 
   const loadData = useCallback(async () => {
     if (!sheetMode) {
@@ -666,8 +667,10 @@ export default function App() {
   // Prefill checkin form: bestaande data of gisteren's waarden voor handmatige velden
   const PREFILL_FIELDS = ["weight", "bp_sys", "bp_dia"];
   useEffect(() => {
+    // Sla prefill over na opslaan — form staat al correct
+    if (skipPrefillRef.current) { skipPrefillRef.current = false; return; }
     const existing = entries.find(e => e.date === entry.date);
-    // Laatste bekende gewicht (ongeacht of vandaag al een rij heeft — Garmin sync schrijft geen gewicht)
+    // Laatste bekende gewicht (Garmin sync schrijft geen gewicht)
     const lastWeight = [...entries].filter(e => e.date <= entry.date && parseNum(e.weight) > 0).slice(-1)[0]?.weight;
     if (existing) {
       const base = { ...EMPTY, ...existing };
@@ -684,6 +687,7 @@ export default function App() {
 
   const saveEntry = async () => {
     setSyncing(true);
+    const savedEntry = { ...entry }; // snapshot vóór async
     const row = HEADERS.map(h => entry[h] ?? "");
     try {
       if (sheetMode) {
@@ -698,7 +702,9 @@ export default function App() {
         raw[entry.date] = entry;
         localStorage.setItem("coach_v2", JSON.stringify(raw));
       }
+      skipPrefillRef.current = true; // voorkom dat prefill form overschrijft na loadData
       await loadData();
+      setEntry(savedEntry); // herstel opgeslagen waarden (sheet kan iets achter zijn)
       setSaveMsg("Opgeslagen!");
     } catch {
       setSaveMsg("Fout bij opslaan");
