@@ -33,21 +33,52 @@ def get_garmin_data():
 
     print(f"[{TODAY}] Verbinden met Garmin Connect...")
 
-    # Token-gebaseerd inloggen (voorkomt dat Garmin account geblokkeerd raakt)
+    # Token-gebaseerd inloggen — sla alleen OAuth-tokens op als JSON
     import sys
-    try:
-        import dill as pickle
-    except ImportError:
-        import pickle
-    client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+    token_file = TOKEN_STORE + ".json"
 
-    # Probeer opgeslagen tokens te laden
-    token_file = TOKEN_STORE + ".pkl"
+    def _extract_tokens(c):
+        """Haal ruwe OAuth-tokens op uit het client-object."""
+        tokens = {}
+        for attr in ("oauth1_token", "oauth2_token", "_oauth1_token", "_oauth2_token"):
+            val = getattr(c, attr, None) or getattr(getattr(c, "client", None), attr, None)
+            if val:
+                tokens[attr.lstrip("_")] = val if isinstance(val, dict) else vars(val)
+        # garminconnect 0.3.x: tokens zitten soms in client.client
+        inner = getattr(c, "client", None)
+        if inner:
+            for attr in dir(inner):
+                if "token" in attr.lower() and not attr.startswith("__"):
+                    try:
+                        val = getattr(inner, attr)
+                        if isinstance(val, dict) and val:
+                            tokens[attr] = val
+                    except Exception:
+                        pass
+        return tokens
+
+    def _inject_tokens(c, tokens):
+        """Zet opgeslagen tokens terug in een nieuw client-object."""
+        inner = getattr(c, "client", c)
+        for key, val in tokens.items():
+            for obj in (c, inner):
+                if hasattr(obj, key) or hasattr(obj, f"_{key}"):
+                    try:
+                        setattr(obj, key, val)
+                    except Exception:
+                        pass
+                    try:
+                        setattr(obj, f"_{key}", val)
+                    except Exception:
+                        pass
+
     loaded = False
     if os.path.exists(token_file):
         try:
-            with open(token_file, "rb") as f:
-                client = pickle.load(f)
+            with open(token_file) as f:
+                saved_tokens = json.load(f)
+            client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
+            _inject_tokens(client, saved_tokens)
             client.connectapi(f"/usersummary-service/usersummary/daily/{client.display_name}", params={"calendarDate": TODAY})
             print("  ✓ Ingelogd via opgeslagen tokens")
             loaded = True
@@ -60,10 +91,13 @@ def get_garmin_data():
         client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD, prompt_mfa=prompt_mfa)
         client.login()
         try:
-            client.prompt_mfa = None  # lambda is niet picklable
-            with open(token_file, "wb") as f:
-                pickle.dump(client, f)
-            print("  ✓ Nieuw ingelogd en tokens opgeslagen")
+            tokens = _extract_tokens(client)
+            if tokens:
+                with open(token_file, "w") as f:
+                    json.dump(tokens, f)
+                print(f"  ✓ Tokens opgeslagen ({len(tokens)} velden)")
+            else:
+                print("  ⚠ Geen tokens gevonden om op te slaan")
         except Exception as e:
             print(f"  ⚠ Tokens konden niet worden opgeslagen: {e}")
 
