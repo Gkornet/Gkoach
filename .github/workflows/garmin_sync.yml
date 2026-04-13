@@ -35,15 +35,16 @@ jobs:
       - name: Garmin tokens herstellen (cache)
         uses: actions/cache@v4
         with:
-          path: backend/.garmin_tokens.json
+          path: backend/.garmin_tokens
           key: garmin-tokens-${{ github.run_id }}
           restore-keys: |
             garmin-tokens-
 
       - name: Garmin tokens herstellen vanuit Secret
         run: |
-          if [ -n "$GARMIN_TOKENS" ] && [ ! -f backend/.garmin_tokens.json ]; then
-            echo "$GARMIN_TOKENS" > backend/.garmin_tokens.json
+          if [ -n "$GARMIN_TOKENS" ]; then
+            mkdir -p backend/.garmin_tokens
+            echo "$GARMIN_TOKENS" | base64 -d | tar -xz -C backend/.garmin_tokens
             echo "  ✓ Tokens hersteld vanuit Secret"
           fi
         env:
@@ -66,5 +67,5 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: backend/.garmin_tokens.json
+          path: backend/.garmin_tokens
           key: garmin-tokens-${{ github.run_id }}

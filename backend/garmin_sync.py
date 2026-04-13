@@ -33,52 +33,16 @@ def get_garmin_data():
 
     print(f"[{TODAY}] Verbinden met Garmin Connect...")
 
-    # Token-gebaseerd inloggen — sla alleen OAuth-tokens op als JSON
+    # Token-gebaseerd inloggen via ingebouwde tokenstore van garminconnect 0.3.x
     import sys
-    token_file = TOKEN_STORE + ".json"
-
-    def _extract_tokens(c):
-        """Haal ruwe OAuth-tokens op uit het client-object."""
-        tokens = {}
-        for attr in ("oauth1_token", "oauth2_token", "_oauth1_token", "_oauth2_token"):
-            val = getattr(c, attr, None) or getattr(getattr(c, "client", None), attr, None)
-            if val:
-                tokens[attr.lstrip("_")] = val if isinstance(val, dict) else vars(val)
-        # garminconnect 0.3.x: tokens zitten soms in client.client
-        inner = getattr(c, "client", None)
-        if inner:
-            for attr in dir(inner):
-                if "token" in attr.lower() and not attr.startswith("__"):
-                    try:
-                        val = getattr(inner, attr)
-                        if isinstance(val, dict) and val:
-                            tokens[attr] = val
-                    except Exception:
-                        pass
-        return tokens
-
-    def _inject_tokens(c, tokens):
-        """Zet opgeslagen tokens terug in een nieuw client-object."""
-        inner = getattr(c, "client", c)
-        for key, val in tokens.items():
-            for obj in (c, inner):
-                if hasattr(obj, key) or hasattr(obj, f"_{key}"):
-                    try:
-                        setattr(obj, key, val)
-                    except Exception:
-                        pass
-                    try:
-                        setattr(obj, f"_{key}", val)
-                    except Exception:
-                        pass
+    token_dir = TOKEN_STORE  # directory waar garminconnect tokens opslaat
 
     loaded = False
-    if os.path.exists(token_file):
+    if os.path.isdir(token_dir) and os.listdir(token_dir):
         try:
-            with open(token_file) as f:
-                saved_tokens = json.load(f)
             client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
-            _inject_tokens(client, saved_tokens)
+            client.login(tokenstore=token_dir)
+            # Test of de sessie nog geldig is
             client.connectapi(f"/usersummary-service/usersummary/daily/{client.display_name}", params={"calendarDate": TODAY})
             print("  ✓ Ingelogd via opgeslagen tokens")
             loaded = True
@@ -86,20 +50,12 @@ def get_garmin_data():
             print("  → Tokens verlopen, opnieuw inloggen...")
 
     if not loaded:
+        os.makedirs(token_dir, exist_ok=True)
         is_interactive = sys.stdin.isatty()
         prompt_mfa = (lambda: input("  Voer je Garmin MFA-code in: ")) if is_interactive else None
         client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD, prompt_mfa=prompt_mfa)
-        client.login()
-        try:
-            tokens = _extract_tokens(client)
-            if tokens:
-                with open(token_file, "w") as f:
-                    json.dump(tokens, f)
-                print(f"  ✓ Tokens opgeslagen ({len(tokens)} velden)")
-            else:
-                print("  ⚠ Geen tokens gevonden om op te slaan")
-        except Exception as e:
-            print(f"  ⚠ Tokens konden niet worden opgeslagen: {e}")
+        client.login(tokenstore=token_dir)
+        print(f"  ✓ Tokens opgeslagen in {token_dir}")
 
     data = {}
 
