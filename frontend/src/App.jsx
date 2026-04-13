@@ -205,8 +205,8 @@ function getDailyPlan(todayData, contextData, entries) {
     { id: "breathing", cat: "Mindfulness", icon: "🫁", label: "Box breathing", sub: "4×4 min · 4 tellen in-hold-uit-hold", color: C.purple, done: isTrue(todayData?.breathing) },
     { ...trainTask, id: "training", done: trainDone },
     { id: "steps", cat: "Beweging", icon: "👟", label: "Dagelijks stappendoel", sub: `${!isNaN(todaySteps) ? Math.round(todaySteps).toLocaleString("nl") : "—"} / 10.000 vandaag`, color: C.green, auto: true, done: todaySteps >= 10000 },
-    { id: "checkin", cat: "Check-in", icon: "📋", label: "Dagelijkse check-in", sub: "Energie, gewicht, opmerkingen invullen", color: C.blue, done: !!(todayData?.date === today() && todayData?.energy) },
-    { id: "sleep", cat: "Avond", icon: "🌙", label: "Slaapvoorbereiding", sub: sleepSub, color: C.indigo, done: sleepDone || sleepPrepped },
+    { id: "checkin", cat: "Check-in", icon: "📋", label: "Dagelijkse check-in", sub: "Gewicht, bloeddruk, stemming invullen", color: C.blue, done: !!(todayData?.date === today() && (todayData?.mood || todayData?.bp_sys || todayData?.weight)) },
+    { id: "sleep", cat: "Avond", icon: "🌙", label: "Slaapvoorbereiding", sub: sleepSub, color: C.indigo, done: sleepPrepped },
   ];
 }
 
@@ -595,7 +595,7 @@ export default function App() {
   }, [loadData]);
 
   // Prefill checkin form: bestaande data of gisteren's waarden voor handmatige velden
-  const PREFILL_FIELDS = ["weight", "alcohol", "bp_sys", "bp_dia", "energy", "stress", "mental_unrest", "notes"];
+  const PREFILL_FIELDS = ["weight", "bp_sys", "bp_dia"];
   useEffect(() => {
     const existing = entries.find(e => e.date === entry.date);
     if (existing) {
@@ -1038,20 +1038,14 @@ export default function App() {
                             </div>
                             <div style={{ textAlign: "right" }}>
                               <div style={{ fontSize: 22, fontWeight: 700, color: urgency, lineHeight: 1 }}>{ev.days}</div>
-                              <div style={{ fontSize: 11, color: C.text3 }}>dagen</div>
+                              <div style={{ fontSize: 11, color: C.text3, marginBottom: sc != null ? 4 : 0 }}>dagen</div>
+                              {sc != null && (
+                                <div style={{ fontSize: 11, fontWeight: 600, color: scColor, background: scColor + "18", borderRadius: 20, padding: "2px 7px", display: "inline-block" }}>
+                                  {scLabel}
+                                </div>
+                              )}
                             </div>
                           </div>
-                          {/* Performance indicator — drempels schalen op resterende tijd */}
-                          {sc != null && (
-                            <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
-                              <div style={{ flex: 1, height: 6, background: C.fill, borderRadius: 3, overflow: "hidden" }}>
-                                <div style={{ height: "100%", width: `${sc}%`, background: scColor, borderRadius: 3, transition: "width 0.6s ease" }} />
-                              </div>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: scColor, minWidth: 70, textAlign: "right" }}>
-                                {scLabel} · {sc}
-                              </div>
-                            </div>
-                          )}
                         </div>
                       );
                     })}
