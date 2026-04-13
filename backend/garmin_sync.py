@@ -71,14 +71,14 @@ def get_garmin_data():
     except Exception as e:
         print(f"  ✗ Slaap: {e}")
 
-    # HRV
+    # HRV — drie waarden
     try:
         hrv = client.get_hrv_data(TODAY)
         summary = hrv.get("hrvSummary", {})
-        # weeklyAvg = 7-daags gemiddelde (wat Garmin toont als HRV-status)
-        # lastNight = nachtmeting van gisternacht (kan sterk variëren)
-        data["hrv"] = summary.get("weeklyAvg", summary.get("lastNight", summary.get("lastNight5MinHigh", "")))
-        print(f"  ✓ HRV weeklyAvg={summary.get('weeklyAvg')} lastNight={summary.get('lastNight')} → opgeslagen: {data['hrv']} ms")
+        data["hrv"]         = summary.get("lastNight", "")          # nachtgemiddelde
+        data["hrv_weekly"]  = summary.get("weeklyAvg", "")          # 7-daags gemiddelde
+        data["hrv_5min"]    = summary.get("lastNight5MinHigh", "")  # hoogste 5-min venster
+        print(f"  ✓ HRV nacht={data['hrv']} 7d={data['hrv_weekly']} 5min={data['hrv_5min']} ms")
     except Exception as e:
         print(f"  ✗ HRV: {e}")
 
@@ -264,7 +264,8 @@ HEADERS = [
     "avg_hr", "max_hr", "avg_pace", "cadence",
     "ground_contact", "vertical_osc", "vertical_ratio", "stride_length", "training_effect", "vo2max",
     "energy", "mental_unrest", "breathing", "breathing_type", "notes", "sleep_prep",
-    "koffie", "mood"
+    "koffie", "mood",
+    "hrv_weekly", "hrv_5min"
 ]
 
 

@@ -96,7 +96,8 @@ const HEADERS = [
   "avg_hr","max_hr","avg_pace","cadence",
   "ground_contact","vertical_osc","vertical_ratio","stride_length","training_effect","vo2max",
   "energy","mental_unrest","breathing","breathing_type","notes","sleep_prep",
-  "koffie","mood"
+  "koffie","mood",
+  "hrv_weekly","hrv_5min"
 ];
 
 // Plan item → entry field mapping (for auto-save)
@@ -151,11 +152,13 @@ function getDailyPlan(todayData, contextData, entries) {
   const canIntense = readiness !== null && readiness >= 70;
 
   // Training: alleen als vandaag echt een activiteit heeft (todayData), niet gisteren
-  const garminTrained = isTrue(todayData?.trained);
+  const trainType = (todayData?.train_type || "").toLowerCase();
+  const isWalking = trainType === "walking" || trainType === "casual_walking";
+  const garminTrained = isTrue(todayData?.trained) && !isWalking;
   const typeLabel = todayData?.train_type
     ? todayData.train_type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
     : "";
-  const isRun = (todayData?.train_type || "").toLowerCase().includes("run");
+  const isRun = trainType.includes("run");
   const trainDone = garminTrained;
 
   let trainTask;
@@ -292,7 +295,7 @@ async function fetchDailyTip({ todayData, contextData, plan, planned, readiness 
   const todayWorkout = planned.find(p => p.date === today());
 
   const metrics = contextData ? [
-    contextData.hrv        && `HRV ${contextData.hrv}ms`,
+    contextData.hrv        && `HRV nacht ${contextData.hrv}ms / 7d ${contextData.hrv_weekly||"?"}ms / 5min ${contextData.hrv_5min||"?"}ms`,
     contextData.sleep_h    && `slaap ${contextData.sleep_h}u`,
     contextData.body_battery && `battery ${contextData.body_battery}%`,
     contextData.stress     && `stress ${contextData.stress}`,
@@ -943,12 +946,35 @@ export default function App() {
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Readiness</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
+                {/* HRV — drie waarden op één rij */}
+                <div style={{ marginBottom: 8 }}>
+                  <div style={{ fontSize: 12, color: C.text3, marginBottom: 4 }}>HRV</div>
+                  <div style={{ display: "flex", gap: 10 }}>
+                    {[
+                      { l: "nacht", v: contextEntry?.hrv,         },
+                      { l: "7d",    v: contextEntry?.hrv_weekly,  },
+                      { l: "5min",  v: contextEntry?.hrv_5min,    },
+                    ].map(m => {
+                      const val = parseNum(m.v);
+                      return (
+                        <div key={m.l} style={{ textAlign: "center" }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: !isNaN(val) ? C.green : C.text3, lineHeight: 1 }}>
+                            {!isNaN(val) ? val : "—"}
+                          </div>
+                          <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>{m.l}</div>
+                        </div>
+                      );
+                    })}
+                    <div style={{ fontSize: 12, color: C.text3, alignSelf: "flex-end", paddingBottom: 2 }}>ms</div>
+                  </div>
+                </div>
+                {/* Overige metrics */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 16px" }}>
                   {[
-                    { l: "HRV",    v: contextEntry?.hrv,          u: " ms",  c: C.green  },
-                    { l: "Slaap",  v: contextEntry?.sleep_h,      u: " u",   c: C.indigo },
-                    { l: "Stress", v: contextEntry?.stress,       u: "",     c: C.orange },
-                    { l: "Battery",v: contextEntry?.body_battery, u: "%",    c: C.teal   },
+                    { l: "Slaap",  v: contextEntry?.sleep_h,      u: " u",  c: C.indigo },
+                    { l: "Battery",v: contextEntry?.body_battery,  u: "%",   c: C.teal   },
+                    { l: "Stress", v: contextEntry?.stress,        u: "",    c: C.orange },
+                    { l: "RHR",    v: contextEntry?.rhr,           u: " bpm",c: C.text3  },
                   ].map(m => {
                     const val = parseNum(m.v);
                     return (
