@@ -272,9 +272,13 @@ const TASK_DETAILS = {
 // ── Coaching ──────────────────────────────────────────────────────────────────
 async function fetchCoaching(entries, question) {
   const recent = entries.slice(-7);
+  const todayStr = today();
+  const todayRow = recent.find(e => e.date === todayStr);
   const prompt = `Je bent een warme maar directe personal health & performance coach. Analyseer en geef concrete coaching.
 
+VANDAAG: ${todayStr}
 DATA (laatste 7 dagen): ${JSON.stringify(recent, null, 2)}
+${todayRow ? `VANDAAG (${todayStr}) DATA BESCHIKBAAR: HRV=${todayRow.hrv}, slaap=${todayRow.sleep_h}u, battery=${todayRow.body_battery}, stress=${todayRow.stress}` : `VANDAAG (${todayStr}): nog geen sync — meest recente rij is van ${recent[recent.length-1]?.date}`}
 
 CONTEXT/VRAAG: ${question || "Geef mijn dagelijkse check-in analyse."}
 
@@ -361,8 +365,23 @@ function calcEventScore(entries) {
   return Math.max(0, Math.min(100, score));
 }
 
-const eventScoreColor = (s) => s >= 70 ? C.green : s >= 45 ? C.orange : C.red;
-const eventScoreLabel = (s) => s >= 70 ? "Op schema" : s >= 45 ? "Bijsturen" : "Aandacht";
+// Drempels schalen op basis van resterende dagen:
+// - >120 dagen: ruim de tijd, wees soepeler (score 35+ = ok)
+// - 60–120 dagen: opbouwfase, gemiddeld streng (score 45+ = ok)
+// - <60 dagen: peaking, streng (score 60+ nodig voor groen)
+function eventScoreThresholds(daysLeft) {
+  if (daysLeft > 120) return { green: 60, orange: 35 };
+  if (daysLeft > 60)  return { green: 65, orange: 45 };
+  return                     { green: 70, orange: 55 };
+}
+const eventScoreColor = (s, daysLeft) => {
+  const t = eventScoreThresholds(daysLeft ?? 999);
+  return s >= t.green ? C.green : s >= t.orange ? C.orange : C.red;
+};
+const eventScoreLabel = (s, daysLeft) => {
+  const t = eventScoreThresholds(daysLeft ?? 999);
+  return s >= t.green ? "Op schema" : s >= t.orange ? "Bijsturen" : "Aandacht";
+};
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 const Ring = ({ value, max = 100, color, size = 120, stroke = 10 }) => {
@@ -431,6 +450,7 @@ export default function App() {
   const [taskDetail,  setTaskDetail]  = useState(null);
   const [viewDate,    setViewDate]    = useState(today());
   const [planned,     setPlanned]     = useState([]);
+  const [touchStartX, setTouchStartX] = useState(null);
 
   const loadData = useCallback(async () => {
     if (!sheetMode) {
@@ -463,10 +483,25 @@ export default function App() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Auto-refresh wanneer de pagina weer actief wordt (bijv. na scherm sluiten/openen)
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === "visible") loadData(); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [loadData]);
+
+  // Prefill checkin form: bestaande data of gisteren's waarden voor handmatige velden
+  const PREFILL_FIELDS = ["weight", "alcohol", "bp_sys", "bp_dia", "energy", "stress", "mental_unrest", "notes"];
   useEffect(() => {
     const existing = entries.find(e => e.date === entry.date);
-    if (existing) setEntry({ ...EMPTY, ...existing });
-    else setEntry({ ...EMPTY, date: entry.date });
+    if (existing) {
+      setEntry({ ...EMPTY, ...existing });
+    } else {
+      const prev = [...entries].filter(e => e.date < entry.date).slice(-1)[0];
+      const base = { ...EMPTY, date: entry.date };
+      if (prev) PREFILL_FIELDS.forEach(k => { if (prev[k] !== "" && prev[k] != null) base[k] = prev[k]; });
+      setEntry(base);
+    }
   }, [entry.date, entries]);
 
   const saveEntry = async () => {
@@ -494,22 +529,24 @@ export default function App() {
     setTimeout(() => setSaveMsg(""), 2500);
   };
 
-  // Auto-save a single field for the current date (used by plan item toggles)
-  const autoSaveField = async (key, value) => {
-    const updated = { ...entry, [key]: value };
-    setEntry(updated);
+  // Auto-save a single field for the viewed date (used by plan item toggles)
+  const autoSaveField = async (key, value, targetDate) => {
+    const date = targetDate || today();
+    const base = entries.find(e => e.date === date) || { ...EMPTY, date };
+    const updated = { ...base, [key]: value };
+    if (entry.date === date) setEntry(updated);
     const row = HEADERS.map(h => updated[h] ?? "");
     try {
       if (sheetMode) {
         const res   = await sheetsGet();
         const rows  = res.values || [];
         const dates = rows.slice(1).map(r => r[0]);
-        const idx   = dates.indexOf(updated.date);
+        const idx   = dates.indexOf(date);
         if (idx >= 0) await sheetsUpdate(idx + 2, row);
         else await sheetsAppend(row);
       } else {
         const raw = JSON.parse(localStorage.getItem("coach_v2") || "{}");
-        raw[updated.date] = updated;
+        raw[date] = updated;
         localStorage.setItem("coach_v2", JSON.stringify(raw));
       }
       await loadData();
@@ -579,12 +616,13 @@ export default function App() {
     <div onClick={() => setTaskDetail(null)} style={{
       position: "fixed", inset: 0, zIndex: 999,
       background: "rgba(0,0,0,0.45)", backdropFilter: "blur(4px)",
-      display: "flex", alignItems: "flex-end", justifyContent: "center"
+      display: "flex", alignItems: "flex-end", justifyContent: "center",
+      cursor: "pointer"
     }}>
       <div onClick={e => e.stopPropagation()} style={{
         background: C.card, borderRadius: "20px 20px 0 0",
         width: "100%", maxWidth: 640, maxHeight: "80vh",
-        overflowY: "auto", padding: "0 0 40px"
+        overflowY: "auto", padding: "0 0 40px", cursor: "default"
       }}>
         {/* Handle */}
         <div style={{ display: "flex", justifyContent: "center", padding: "12px 0 0" }}>
@@ -625,7 +663,7 @@ export default function App() {
 
             const markDone = async (val) => {
               if (field) {
-                await autoSaveField(field, val ? "true" : "false");
+                await autoSaveField(field, val ? "true" : "false", today());
               } else {
                 setPlanDone(p => ({ ...p, [taskDetail.id]: val }));
               }
@@ -682,7 +720,16 @@ export default function App() {
 
       {/* ── VANDAAG ── */}
       {tab === "vandaag" && (
-        <div className="fade" style={{ paddingBottom: 90 }}>
+        <div className="fade" style={{ paddingBottom: 90 }}
+          onTouchStart={e => setTouchStartX(e.touches[0].clientX)}
+          onTouchEnd={e => {
+            if (touchStartX === null) return;
+            const dx = e.changedTouches[0].clientX - touchStartX;
+            setTouchStartX(null);
+            if (dx > 60 && prevDate) setViewDate(prevDate);
+            if (dx < -60 && nextDate) setViewDate(nextDate);
+          }}
+        >
           {/* Header */}
           <div style={{ background: C.card, padding: "52px 20px 16px", borderBottom: `1px solid ${C.border}` }}>
             <div style={{ maxWidth: 640, margin: "0 auto" }}>
@@ -720,13 +767,18 @@ export default function App() {
                 </div>
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Readiness</div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+                  <div style={{ fontSize: 17, fontWeight: 600 }}>Readiness</div>
+                  {!displayEntry && contextEntry && isToday && (
+                    <div style={{ fontSize: 11, color: C.text3 }}>gisteren</div>
+                  )}
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 16px" }}>
                   {[
-                    { l: "HRV",    v: displayEntry?.hrv,          u: " ms",  c: C.green  },
-                    { l: "Slaap",  v: displayEntry?.sleep_h,      u: " u",   c: C.indigo },
-                    { l: "Stress", v: displayEntry?.stress,        u: "",     c: C.orange },
-                    { l: "Battery",v: displayEntry?.body_battery,  u: "%",    c: C.teal   },
+                    { l: "HRV",    v: contextEntry?.hrv,          u: " ms",  c: C.green  },
+                    { l: "Slaap",  v: contextEntry?.sleep_h,      u: " u",   c: C.indigo },
+                    { l: "Stress", v: contextEntry?.stress,       u: "",     c: C.orange },
+                    { l: "Battery",v: contextEntry?.body_battery, u: "%",    c: C.teal   },
                   ].map(m => {
                     const val = parseNum(m.v);
                     return (
@@ -803,8 +855,6 @@ export default function App() {
             {/* Aankomende events */}
             {(() => {
               const sc = eventScore;
-              const scColor = sc != null ? eventScoreColor(sc) : C.text3;
-              const scLabel = sc != null ? eventScoreLabel(sc) : "Geen data";
               const events = [
                 { name: "10K Noordwijk", date: "2026-07-05", days: race1, icon: "🏃" },
                 { name: "Gym-race Utrecht", date: "2026-10-04", days: race2, icon: "💪" },
@@ -815,6 +865,8 @@ export default function App() {
                   <div style={{ background: C.card, borderRadius: 16, overflow: "hidden" }}>
                     {events.map((ev, i) => {
                       const urgency = ev.days < 14 ? C.red : ev.days < 42 ? C.orange : C.green;
+                      const scColor = sc != null ? eventScoreColor(sc, ev.days) : C.text3;
+                      const scLabel = sc != null ? eventScoreLabel(sc, ev.days) : "Geen data";
                       return (
                         <div key={ev.name} style={{ padding: "16px", borderBottom: i < events.length - 1 ? `1px solid ${C.border}` : "none" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -832,7 +884,7 @@ export default function App() {
                               <div style={{ fontSize: 11, color: C.text3 }}>dagen</div>
                             </div>
                           </div>
-                          {/* Performance indicator */}
+                          {/* Performance indicator — drempels schalen op resterende tijd */}
                           {sc != null && (
                             <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
                               <div style={{ flex: 1, height: 6, background: C.fill, borderRadius: 3, overflow: "hidden" }}>
