@@ -1111,6 +1111,12 @@ export default function App() {
   const plan       = getDailyPlan(displayEntry, contextEntry, entries, planned);
   // HRV display: gebruik laatste entry met echte HRV-data (vandaag kan HRV nog leeg zijn)
   const hrvEntry   = [...entries].reverse().find(e => parseNum(e.hrv) > 0) || contextEntry;
+  // hrv_weekly fallback: als Garmin geen weeklyAvg stuurt (null → ""), bereken zelf uit laatste 7 nachten
+  const computedHrvWeekly = (() => {
+    if (parseNum(hrvEntry?.hrv_weekly) > 0) return String(parseNum(hrvEntry.hrv_weekly));
+    const vals = numArr(entries.slice(-7), "hrv").filter(v => v > 0);
+    return vals.length >= 3 ? String(Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)) : null;
+  })();
   const doneTasks  = plan.filter(t => t.done || planDone[t.id]).length;
 
   const hour = new Date().getHours();
@@ -1365,7 +1371,7 @@ export default function App() {
                     <span style={{ fontSize: 11, color: C.text3, alignSelf: "center" }}>HRV</span>
                     {[
                       { l: "nacht", v: hrvEntry?.hrv        },
-                      { l: "7d",    v: hrvEntry?.hrv_weekly },
+                      { l: "7d",    v: computedHrvWeekly    },
                       { l: "5min",  v: hrvEntry?.hrv_5min   },
                     ].map(m => {
                       const val = parseNum(m.v);
@@ -1437,9 +1443,10 @@ export default function App() {
               })}
             </div>
 
-            {/* Activiteiten vandaag */}
+            {/* Activiteiten vandaag — alleen uit displayEntry (=vandaag), NOOIT gisteren als fallback */}
             {(() => {
-              const raw = displayEntry?.activities || contextEntry?.activities;
+              // Alleen vandaag's activiteiten tonen — geen contextEntry fallback (dat is gisteren!)
+              const raw = displayEntry?.activities;
               if (!raw) return null;
               let acts = [];
               try { acts = JSON.parse(raw); } catch { return null; }
@@ -1457,26 +1464,38 @@ export default function App() {
                 return "🏅";
               };
               const typeLabel = t => (t||"").replace(/_/g," ").replace(/\b\w/g, c=>c.toUpperCase());
+              const isWalkType = t => (t||"").includes("walk");
               return (
                 <div style={{ background: C.card, borderRadius: 16, overflow: "hidden", marginBottom: 12 }}>
                   <div style={{ padding: "14px 16px 10px", fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                     Activiteiten vandaag
                   </div>
-                  {acts.map((a, i) => (
+                  {acts.map((a, i) => {
+                    const done = true; // als het in de sheet staat, is het gedaan
+                    return (
                     <div key={i} style={{ padding: "10px 16px", display: "flex", alignItems: "center", gap: 14,
-                      borderTop: `1px solid ${C.border}` }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 10, background: C.orange + "15",
-                        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
+                      borderTop: `1px solid ${C.border}`, opacity: done ? 1 : 0.6 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 18, background: C.orange + "20",
+                        display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0, position: "relative" }}>
                         {sportIcon(a.type)}
+                        <div style={{ position: "absolute", bottom: -3, right: -3, width: 16, height: 16, borderRadius: 8,
+                          background: C.orange, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+                            <path d="M1 3.5L3.5 6L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        </div>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 14, fontWeight: 500 }}>{a.name || typeLabel(a.type)}</div>
+                        <div style={{ fontSize: 14, fontWeight: 500, textDecoration: "line-through", color: C.text3 }}>
+                          {a.name || typeLabel(a.type)}
+                        </div>
                         <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
                           {[a.min && `${a.min} min`, a.dist && `${a.dist} km`, a.hr && `${a.hr} bpm gem.`].filter(Boolean).join(" · ")}
                         </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               );
             })()}
@@ -1580,24 +1599,39 @@ export default function App() {
                 if (diff === 1) return "Morgen";
                 return new Date(d + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "short", day: "numeric", month: "short" });
               };
+              // Training vandaag gedaan als Garmin sync trained=true toont voor vandaag
+              const trainedToday = plan.find(t => t.id === "training")?.done || false;
               return (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Garmin trainingsplan</div>
                   <div style={{ background: C.card, borderRadius: 16, overflow: "hidden" }}>
-                    {upcoming.map((p, i) => (
-                      <div key={p.date + p.title} style={{ padding: "13px 16px", display: "flex", alignItems: "center", gap: 14, borderBottom: i < upcoming.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                        <div style={{ width: 36, height: 36, borderRadius: 10, background: C.orange + "15", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
-                          {sportIcon(p.sport)}
+                    {upcoming.map((p, i) => {
+                      const isToday = p.date === today();
+                      const isDone  = isToday && trainedToday;
+                      return (
+                      <div key={p.date + p.title} style={{ padding: "13px 16px", display: "flex", alignItems: "center", gap: 14, borderBottom: i < upcoming.length - 1 ? `1px solid ${C.border}` : "none", opacity: isDone ? 0.75 : 1 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: 10,
+                          background: isDone ? C.green + "20" : C.orange + "15",
+                          display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>
+                          {isDone ? "✅" : sportIcon(p.sport)}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 15, fontWeight: 500 }}>{p.title}</div>
-                          <div style={{ fontSize: 12, color: C.text3, marginTop: 1 }}>{dayLabel(p.date)}</div>
+                          <div style={{ fontSize: 15, fontWeight: 500, textDecoration: isDone ? "line-through" : "none", color: isDone ? C.text3 : C.text }}>
+                            {p.title}
+                          </div>
+                          <div style={{ fontSize: 12, color: C.text3, marginTop: 1 }}>
+                            {isDone ? "Voltooid vandaag · gesynchroniseerd" : dayLabel(p.date)}
+                          </div>
                         </div>
-                        {p.date === today() && (
+                        {isToday && !isDone && (
                           <div style={{ fontSize: 11, fontWeight: 600, color: C.orange, background: C.orange + "15", padding: "3px 8px", borderRadius: 20 }}>Vandaag</div>
                         )}
+                        {isDone && (
+                          <div style={{ fontSize: 11, fontWeight: 600, color: C.green, background: C.green + "15", padding: "3px 8px", borderRadius: 20 }}>✓ Gedaan</div>
+                        )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
