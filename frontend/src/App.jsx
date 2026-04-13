@@ -551,18 +551,17 @@ const Toggle = ({ checked, onChange }) => (
 const Stepper = ({ label, value, onChange, step = 1, min = 0, max = 99, unit = "" }) => {
   const val = isNaN(parseFloat(value)) ? 0 : parseFloat(value);
   const dec = String(step).includes(".") ? String(step).split(".")[1].length : 0;
+  const btnStyle = { width: 44, height: 44, borderRadius: 22, background: C.card, border: `1px solid ${C.border}`, fontSize: 24, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 300, color: C.text, flexShrink: 0, touchAction: "manipulation" };
   return (
-    <div style={{ background: C.fill, borderRadius: 16, padding: "16px 20px" }}>
-      <div style={{ fontSize: 13, color: C.text3, marginBottom: 10 }}>{label}</div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <button onPointerDown={() => onChange(Math.max(min, parseFloat((val - step).toFixed(dec))))}
-          style={{ width: 48, height: 48, borderRadius: 24, background: C.card, border: `1px solid ${C.border}`, fontSize: 26, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 300, color: C.text, flexShrink: 0 }}>−</button>
-        <div style={{ textAlign: "center", flex: 1 }}>
-          <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.5px" }}>{dec > 0 ? val.toFixed(dec) : val}</span>
-          {unit && <span style={{ fontSize: 14, color: C.text3, marginLeft: 4 }}>{unit}</span>}
+    <div style={{ background: C.fill, borderRadius: 16, padding: "14px 12px" }}>
+      <div style={{ fontSize: 13, color: C.text3, marginBottom: 8 }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
+        <button onPointerDown={e => { e.preventDefault(); onChange(Math.max(min, parseFloat((val - step).toFixed(dec)))); }} style={btnStyle}>−</button>
+        <div style={{ textAlign: "center", flex: 1, minWidth: 0 }}>
+          <span style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.5px" }}>{dec > 0 ? val.toFixed(dec) : val}</span>
+          {unit && <span style={{ fontSize: 13, color: C.text3, marginLeft: 3 }}>{unit}</span>}
         </div>
-        <button onPointerDown={() => onChange(Math.min(max, parseFloat((val + step).toFixed(dec))))}
-          style={{ width: 48, height: 48, borderRadius: 24, background: C.card, border: `1px solid ${C.border}`, fontSize: 26, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 300, color: C.text, flexShrink: 0 }}>+</button>
+        <button onPointerDown={e => { e.preventDefault(); onChange(Math.min(max, parseFloat((val + step).toFixed(dec)))); }} style={btnStyle}>+</button>
       </div>
     </div>
   );
@@ -668,12 +667,17 @@ export default function App() {
   const PREFILL_FIELDS = ["weight", "bp_sys", "bp_dia"];
   useEffect(() => {
     const existing = entries.find(e => e.date === entry.date);
+    // Laatste bekende gewicht (ongeacht of vandaag al een rij heeft — Garmin sync schrijft geen gewicht)
+    const lastWeight = [...entries].filter(e => e.date <= entry.date && parseNum(e.weight) > 0).slice(-1)[0]?.weight;
     if (existing) {
-      setEntry({ ...EMPTY, ...existing });
+      const base = { ...EMPTY, ...existing };
+      if (!parseNum(base.weight) && lastWeight) base.weight = lastWeight;
+      setEntry(base);
     } else {
       const prev = [...entries].filter(e => e.date < entry.date).slice(-1)[0];
       const base = { ...EMPTY, date: entry.date };
-      if (prev) PREFILL_FIELDS.forEach(k => { if (prev[k] !== "" && prev[k] != null) base[k] = prev[k]; });
+      PREFILL_FIELDS.forEach(k => { if (prev?.[k] !== "" && prev?.[k] != null) base[k] = prev[k]; });
+      if (!parseNum(base.weight) && lastWeight) base.weight = lastWeight;
       setEntry(base);
     }
   }, [entry.date, entries]);
@@ -1029,18 +1033,18 @@ export default function App() {
                   </div>
                 </div>
                 {/* Overige metrics */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px" }}>
                   {[
                     { l: "Slaap",        v: contextEntry?.sleep_h,      u: " u",  c: C.indigo },
                     { l: "Stress",       v: contextEntry?.stress,        u: "",    c: C.orange },
-                    { l: "Body battery", v: contextEntry?.body_battery,  u: "%",   c: C.teal   },
-                    { l: "Rusthartslag", v: contextEntry?.rhr,           u: " bpm",c: C.text3  },
+                    { l: "Battery",      v: contextEntry?.body_battery,  u: "%",   c: C.teal   },
+                    { l: "RHR",          v: contextEntry?.rhr,           u: " bpm",c: C.text3  },
                   ].map(m => {
                     const val = parseNum(m.v);
                     return (
-                      <div key={m.l} style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 12, color: C.text3 }}>{m.l}</span>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: !isNaN(val) ? m.c : C.text3 }}>{!isNaN(val) ? `${m.v}${m.u}` : "—"}</span>
+                      <div key={m.l}>
+                        <div style={{ fontSize: 10, color: C.text3, marginBottom: 1 }}>{m.l}</div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: !isNaN(val) ? m.c : C.text3, lineHeight: 1.2 }}>{!isNaN(val) ? `${m.v}${m.u}` : "—"}</div>
                       </div>
                     );
                   })}
@@ -1379,9 +1383,11 @@ export default function App() {
               style={{ fontSize: 13, color: C.text3, background: "none", border: "none", padding: 0, cursor: "pointer", outline: "none", textAlign: "right" }} />
           </div>
 
-          {/* Tellers: Gewicht, Alcohol, Koffie */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+          {/* Tellers */}
+          <div style={{ marginBottom: 10 }}>
             <Stepper label="Gewicht" value={entry.weight || 0} onChange={v => set("weight", v)} step={0.1} min={40} max={200} unit="kg" />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
             <Stepper label="Alcohol" value={entry.alcohol || 0} onChange={v => set("alcohol", v)} step={1} min={0} max={20} unit="gl" />
             <Stepper label="Koffie" value={entry.koffie || 0} onChange={v => set("koffie", v)} step={1} min={0} max={15} unit="kp" />
           </div>
