@@ -446,6 +446,7 @@ export default function App() {
   const [question,  setQuestion]  = useState("");
   const [saveMsg,   setSaveMsg]   = useState("");
   const [sheetMode, setSheetMode] = useState(!!SHEET_ID);
+  const [lastRefresh, setLastRefresh] = useState(null);
   const [planDone,    setPlanDone]    = useState({});
   const [taskDetail,  setTaskDetail]  = useState(null);
   const [viewDate,    setViewDate]    = useState(today());
@@ -459,6 +460,7 @@ export default function App() {
         setEntries(Object.values(raw).sort((a, b) => a.date.localeCompare(b.date)));
       } catch {}
       setLoading(false);
+      setLastRefresh(new Date());
       return;
     }
     try {
@@ -474,6 +476,7 @@ export default function App() {
         setEntries(data);
       }
       setPlanned(plannedData);
+      setLastRefresh(new Date());
     } catch (e) {
       console.error("Sheets load error:", e);
       setSheetMode(false);
@@ -483,11 +486,15 @@ export default function App() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  // Auto-refresh wanneer de pagina weer actief wordt (bijv. na scherm sluiten/openen)
+  // Auto-refresh: elke 5 minuten én bij terugkeren naar de app
   useEffect(() => {
+    const interval = setInterval(loadData, 5 * 60 * 1000);
     const onVisible = () => { if (document.visibilityState === "visible") loadData(); };
     document.addEventListener("visibilitychange", onVisible);
-    return () => document.removeEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [loadData]);
 
   // Prefill checkin form: bestaande data of gisteren's waarden voor handmatige velden
@@ -762,9 +769,10 @@ export default function App() {
               <div style={{ background: C.orange + "18", borderRadius: 12, padding: "10px 14px", marginBottom: 10, display: "flex", alignItems: "center", gap: 10 }}>
                 <span style={{ fontSize: 16 }}>⏱</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: C.orange }}>Nog geen sync vandaag</div>
-                  <div style={{ fontSize: 12, color: C.text3 }}>Data hieronder is van {fmt(contextEntry.date)} · synct automatisch om 07:30, 12:30, 19:30 en 22:30</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.orange }}>Data van {fmt(contextEntry.date)}</div>
+                  <div style={{ fontSize: 12, color: C.text3 }}>Sync draait automatisch om 07:30, 12:30, 19:30 en 22:30{lastRefresh ? ` · app ververst om ${lastRefresh.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}` : ""}</div>
                 </div>
+                <button onClick={loadData} style={{ background: C.orange + "25", border: "none", borderRadius: 8, padding: "6px 10px", fontSize: 13, color: C.orange, fontWeight: 600, cursor: "pointer" }}>↻</button>
               </div>
             )}
 
@@ -944,8 +952,9 @@ export default function App() {
             })()}
 
             {sheetMode && (
-              <button onClick={loadData} style={{ width: "100%", background: C.fill, border: "none", borderRadius: 12, padding: "12px 16px", fontSize: 14, color: C.text3, cursor: "pointer", marginBottom: 4 }}>
-                ↻ Ververs data
+              <button onClick={loadData} style={{ width: "100%", background: C.fill, border: "none", borderRadius: 12, padding: "12px 16px", fontSize: 14, color: C.text3, cursor: "pointer", marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                <span>↻</span>
+                <span>Ververs data{lastRefresh ? ` · ${lastRefresh.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}` : ""}</span>
               </button>
             )}
             {!sheetMode && (
