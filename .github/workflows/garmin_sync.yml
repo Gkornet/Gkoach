@@ -56,9 +56,8 @@ jobs:
           GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
           SHEET_TAB_NAME: coach_data
-          GOOGLE_SERVICE_ACCOUNT_JSON: ./backend/service_account.json
+          GOOGLE_SERVICE_ACCOUNT_JSON: ./service_account.json
         run: |
-          # Service account JSON aanmaken vanuit GitHub Secret
           echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}' > backend/service_account.json
           cd backend
           python garmin_sync.py
