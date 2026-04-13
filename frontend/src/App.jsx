@@ -911,6 +911,7 @@ const Field = ({ label, children }) => (
 export default function App() {
   const [entries,   setEntries]   = useState([]);
   const [loading,   setLoading]   = useState(true);
+  const [sheetsError, setSheetsError] = useState(null);
   const [syncing,   setSyncing]   = useState(false);
   const [tab,       setTab]       = useState("vandaag");
   const [entry,     setEntry]     = useState({ ...EMPTY, date: today() });
@@ -947,7 +948,16 @@ export default function App() {
     }
     try {
       const [res, plannedData] = await Promise.all([sheetsGet(), sheetsGetPlanned().catch(() => [])]);
+      console.log("[loadData] API response:", JSON.stringify(res).slice(0, 300));
       const rows = res.values || [];
+      console.log("[loadData] rows.length:", rows.length, "| header row:", rows[0]?.slice(0,5));
+      if (res.error) {
+        const msg = `Sheets API fout ${res.error.code}: ${res.error.message}`;
+        console.error("[loadData]", msg);
+        setSheetsError(msg);
+      } else {
+        setSheetsError(null);
+      }
       if (rows.length >= 2) {
         // Gebruik UITSLUITEND de werkelijke sheet-headers (rij 1) voor kolom-mapping.
         // Geen positie-based fallback — die geeft foute waarden als kolommen zijn
@@ -960,12 +970,15 @@ export default function App() {
           });
           return obj;
         }).filter(e => e.date).sort((a, b) => a.date.localeCompare(b.date));
+        console.log("[loadData] entries loaded:", data.length, "| first:", data[0]?.date, "| last:", data[data.length-1]?.date);
         setEntries(data);
+      } else {
+        console.warn("[loadData] Niet genoeg rijen in sheet (rows.length=" + rows.length + ")");
       }
       setPlanned(plannedData);
       setLastRefresh(new Date());
     } catch (e) {
-      console.error("Sheets load error:", e);
+      console.error("[loadData] Sheets load error:", e);
       // Niet terugvallen op lokale modus — blijf sheets gebruiken bij volgende refresh
     }
     setLoading(false);
@@ -1378,6 +1391,12 @@ export default function App() {
 
           <div style={{ maxWidth: 640, margin: "0 auto", padding: "16px 16px 0" }}>
 
+            {/* Sheets API fout banner */}
+            {sheetsError && (
+              <div style={{ background: "#FF3B3020", border: "1px solid #FF3B30", borderRadius: 10, padding: "10px 14px", marginBottom: 12, fontSize: 13, color: "#FF3B30" }}>
+                ⚠️ {sheetsError}
+              </div>
+            )}
 
             {/* Readiness card */}
             <div style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 16 }}>
