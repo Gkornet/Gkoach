@@ -213,14 +213,20 @@ function calcReadiness(last, entries) {
 // ── Daily plan ────────────────────────────────────────────────────────────────
 // todayData = strict today entry (null if not synced yet)
 // contextData = last known entry for readiness/HRV context
-function getDailyPlan(todayData, contextData, entries) {
-  const last       = contextData; // for readiness calcs
+function getDailyPlan(todayData, contextData, entries, plannedWorkouts = []) {
+  const last       = contextData;
   const readiness  = calcReadiness(last, entries);
   const race1Days  = daysUntil("2026-07-05");
-  const recentDays = (entries || []).slice(-3);
-  const trainedRecently = recentDays.filter(e => isTrue(e.trained)).length;
-  const needsRest  = trainedRecently >= 2 || (readiness !== null && readiness < 45);
-  const canIntense = readiness !== null && readiness >= 70;
+  const todayStr   = today();
+
+  // Trainingsbelasting: hoeveel dagen getraind van afgelopen 7
+  const recent7    = (entries || []).slice(-7);
+  const recent3    = (entries || []).slice(-3);
+  const trainedLast7 = recent7.filter(e => isTrue(e.trained)).length;
+  const trainedLast3 = recent3.filter(e => isTrue(e.trained)).length;
+  const needsRest  = trainedLast3 >= 2 || (readiness !== null && readiness < 45);
+  const canIntense = readiness !== null && readiness >= 65;
+  const isRecovery = readiness !== null && readiness < 55;
 
   // Training: alleen als vandaag echt een activiteit heeft (todayData), niet gisteren
   const trainType = (todayData?.train_type || "").toLowerCase();
@@ -232,22 +238,54 @@ function getDailyPlan(todayData, contextData, entries) {
   const isRun = trainType.includes("run");
   const trainDone = garminTrained;
 
+  // Geplande workout voor vandaag (uit Garmin Coach)
+  const todayPlanned = plannedWorkouts.find(p => p.date === todayStr);
+  const rhr = parseNum(last?.rhr);
+  const z2lo = rhr > 0 ? Math.round(rhr * 1.6) : 130;
+  const z2hi = rhr > 0 ? Math.round(rhr * 1.75) : 145;
+
   let trainTask;
   if (garminTrained) {
+    // ✓ Activiteit al gesynchroniseerd vanuit Garmin
     const parts = [];
     if (todayData?.train_min) parts.push(`${todayData.train_min} min`);
     if (todayData?.train_dist) parts.push(`${todayData.train_dist} km`);
     if (todayData?.avg_hr) parts.push(`gem. ${todayData.avg_hr} bpm`);
     if (isRun && todayData?.avg_pace) parts.push(`${todayData.avg_pace}/km`);
     trainTask = { icon: isRun ? "🏃" : "💪", label: typeLabel || "Training", sub: parts.join(" · ") || "Gesynchroniseerd vanuit Garmin", color: C.orange, cat: "Training" };
+  } else if (todayPlanned) {
+    // Gepland workout in Garmin Coach
+    const planSport = todayPlanned.sport || "";
+    const planIsRun = planSport.toLowerCase().includes("run");
+    if (needsRest || isRecovery) {
+      // Lage readiness → adviseer herstel in plaats van geplande training
+      trainTask = {
+        icon: "🔄", cat: "Training", color: C.teal,
+        label: `Herstel i.p.v. ${todayPlanned.title || "gepland"}`,
+        sub: `Readiness ${readiness}% — sla over of doe 20 min lichte wandeling`,
+      };
+    } else {
+      // Goed herstel → voer geplande training uit
+      trainTask = {
+        icon: planIsRun ? "🏃" : "💪", cat: "Training", color: C.orange,
+        label: todayPlanned.title || (planIsRun ? "Hardlooptraining" : "Training"),
+        sub: `Gepland via Garmin Coach · ${planSport}`,
+      };
+    }
   } else if (needsRest) {
-    trainTask = { icon: "🧘", label: "Hersteldag", sub: "Lichte wandeling of rust — HRV vraagt herstel", color: C.teal, cat: "Herstel" };
+    // Geen plan, laag herstel
+    trainTask = { icon: "🧘", label: "Hersteldag", sub: `Readiness ${readiness ?? "?"}% — rust of lichte wandeling`, color: C.teal, cat: "Herstel" };
   } else if (canIntense) {
-    trainTask = race1Days > 42
-      ? { icon: "🏃", label: "Zone 2 duurloop", sub: `45–55 min · HR ${last?.rhr ? Math.round(+last.rhr*1.6) : 130}–${last?.rhr ? Math.round(+last.rhr*1.75) : 145} bpm`, color: C.orange, cat: "Training" }
-      : { icon: "🏃", label: "Tempolopen", sub: `30 min · 5×3 min @ racetempo + warming-up`, color: C.orange, cat: "Training" };
+    // Geen plan, goed herstel, hoge readiness
+    const weeksToRace = Math.floor(race1Days / 7);
+    if (race1Days > 42) {
+      trainTask = { icon: "🏃", label: "Zone 2 duurloop", sub: `40–50 min · HR ${z2lo}–${z2hi} bpm · ${trainedLast7}/7 dagen actief`, color: C.orange, cat: "Training" };
+    } else {
+      trainTask = { icon: "🏃", label: "Tempo-interval", sub: `${weeksToRace} weken tot 10km Noordwijk · 5×3 min @ racetempo`, color: C.orange, cat: "Training" };
+    }
   } else {
-    trainTask = { icon: "🚶", label: "Actief herstel", sub: "30 min wandeling of mobiliteitswerk", color: C.green, cat: "Training" };
+    // Geen plan, matig herstel
+    trainTask = { icon: "🚶", label: "Actief herstel", sub: `30 min wandeling · ${trainedLast7}/7 dagen actief deze week`, color: C.green, cat: "Training" };
   }
 
   // Slaap: bedtijd terugrekenen vanuit 6:30 wekker
@@ -902,10 +940,11 @@ export default function App() {
       const [res, plannedData] = await Promise.all([sheetsGet(), sheetsGetPlanned().catch(() => [])]);
       const rows = res.values || [];
       if (rows.length >= 2) {
-        const hdrs = rows[0];
+        // Gebruik altijd de frontend HEADERS constant voor kolom-mapping
+        // (sheet header-rij kan verouderd zijn na toevoeging van nieuwe velden)
         const data = rows.slice(1).map(r => {
           const obj = {};
-          hdrs.forEach((h, i) => { obj[h] = r[i] ?? ""; });
+          HEADERS.forEach((h, i) => { obj[h] = r[i] ?? ""; });
           return obj;
         }).sort((a, b) => a.date.localeCompare(b.date));
         setEntries(data);
@@ -1048,7 +1087,9 @@ export default function App() {
   const race2      = daysUntil("2026-10-04");
   const readiness  = calcReadiness(contextEntry, entries);
   const eventScore = calcEventScore(entries);
-  const plan       = getDailyPlan(displayEntry, contextEntry, entries);
+  const plan       = getDailyPlan(displayEntry, contextEntry, entries, planned);
+  // HRV display: gebruik laatste entry met echte HRV-data (vandaag kan HRV nog leeg zijn)
+  const hrvEntry   = [...entries].reverse().find(e => parseNum(e.hrv) > 0) || contextEntry;
   const doneTasks  = plan.filter(t => t.done || planDone[t.id]).length;
 
   const hour = new Date().getHours();
@@ -1301,9 +1342,9 @@ export default function App() {
                   <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
                     <span style={{ fontSize: 11, color: C.text3, alignSelf: "center" }}>HRV</span>
                     {[
-                      { l: "nacht", v: contextEntry?.hrv        },
-                      { l: "7d",    v: contextEntry?.hrv_weekly },
-                      { l: "5min",  v: contextEntry?.hrv_5min   },
+                      { l: "nacht", v: hrvEntry?.hrv        },
+                      { l: "7d",    v: hrvEntry?.hrv_weekly },
+                      { l: "5min",  v: hrvEntry?.hrv_5min   },
                     ].map(m => {
                       const val = parseNum(m.v);
                       return (
@@ -1728,21 +1769,21 @@ export default function App() {
         // Compute insights
         const insights = [];
 
-        // 1. HRV week-over-week
-        const hrv7   = numArr(last7, "hrv");
-        const hrvP7  = numArr(prev7, "hrv");
-        const hrv7a  = hrv7.length  ? hrv7.reduce((a,b)=>a+b,0)/hrv7.length   : null;
-        const hrvP7a = hrvP7.length ? hrvP7.reduce((a,b)=>a+b,0)/hrvP7.length : null;
+        // 1. HRV week-over-week — gebruik hrv_weekly (Garmin's eigen 7d rolling avg) voor juiste waarde
+        const latestHrvWeekly = [...last7].reverse().find(e => parseNum(e.hrv_weekly) > 0);
+        const prevHrvWeekly   = [...prev7].reverse().find(e => parseNum(e.hrv_weekly) > 0);
+        const hrv7a  = latestHrvWeekly ? parseNum(latestHrvWeekly.hrv_weekly) : null;
+        const hrvP7a = prevHrvWeekly   ? parseNum(prevHrvWeekly.hrv_weekly)   : null;
         if (hrv7a != null) {
           if (hrvP7a != null && Math.abs(hrv7a - hrvP7a) > 1) {
             const d = hrv7a - hrvP7a;
             insights.push({ icon: "💚", color: d>0?C.green:C.red,
               title: d>0 ? "HRV verbetert" : "HRV daalt",
-              body: `Gemiddeld ${Math.abs(d).toFixed(1)} ms ${d>0?"hoger":"lager"} dan vorige week (${hrv7a.toFixed(0)} vs ${hrvP7a.toFixed(0)} ms).` });
+              body: `7d gemiddeld ${Math.abs(d).toFixed(1)} ms ${d>0?"hoger":"lager"} dan vorige week (${hrv7a.toFixed(0)} vs ${hrvP7a.toFixed(0)} ms).` });
           } else {
             insights.push({ icon: "💚", color: C.text3,
               title: "HRV stabiel",
-              body: `Gemiddeld ${hrv7a.toFixed(0)} ms deze week.` });
+              body: `7d gemiddeld ${hrv7a.toFixed(0)} ms deze week.` });
           }
         }
 
@@ -1872,25 +1913,30 @@ export default function App() {
                 )}
 
                 {/* HRV chart */}
-                {numArr(last30, "hrv").length >= 2 && (
+                {numArr(last30, "hrv").length >= 2 && (() => {
+                  const hrvVals = numArr(last30,"hrv");
+                  const latestWeekly = [...last30].reverse().find(e => parseNum(e.hrv_weekly) > 0);
+                  const displayHrv = latestWeekly ? parseNum(latestWeekly.hrv_weekly) : hrvVals.slice(-1)[0];
+                  return (
                   <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
                       <div style={{ fontSize: 15, fontWeight: 600 }}>HRV</div>
                       <div style={{ fontSize: 22, fontWeight: 700, color: C.green }}>
-                        {numArr(last30,"hrv").slice(-1)[0]}
+                        {displayHrv}
                         <span style={{ fontSize: 12, color: C.text3, fontWeight: 400 }}> ms</span>
                       </div>
                     </div>
                     <div style={{ fontSize: 12, color: C.text3, marginBottom: 10 }}>
-                      gem. {avg(numArr(last30,"hrv"))} ms · {numArr(last30,"hrv").length} metingen
+                      7d gem. · nacht gem. {avg(hrvVals)} ms · {hrvVals.length} metingen
                     </div>
-                    <Sparkline data={numArr(last30,"hrv")} color={C.green} height={56} fill />
+                    <Sparkline data={hrvVals} color={C.green} height={56} fill />
                     <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:C.text3, marginTop:4 }}>
-                      <span>min {Math.min(...numArr(last30,"hrv"))}</span>
-                      <span>max {Math.max(...numArr(last30,"hrv"))}</span>
+                      <span>min {Math.min(...hrvVals)}</span>
+                      <span>max {Math.max(...hrvVals)}</span>
                     </div>
                   </div>
-                )}
+                  );
+                })()}
 
                 {/* Slaap + Battery charts */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>

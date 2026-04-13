@@ -104,7 +104,16 @@ def get_garmin_data():
     WALKING_TYPES = {"walking", "casual_walking"}
     try:
         yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
-        activities = client.get_activities_by_date(yesterday, TODAY)
+        all_fetched = client.get_activities_by_date(yesterday, TODAY)
+
+        # Filter op alleen activiteiten van vandaag
+        def activity_date(a):
+            start = a.get("startTimeLocal", a.get("startTimeGMT", ""))
+            return str(start)[:10]
+        activities = [a for a in all_fetched if activity_date(a) == TODAY]
+        if not activities:
+            activities = all_fetched  # fallback: gebruik alles als filter leeg geeft
+        print(f"  → {len(all_fetched)} activiteiten opgehaald, {len(activities)} van vandaag ({TODAY})")
 
         # Sla alle activiteiten op als JSON-lijst
         all_acts = []
