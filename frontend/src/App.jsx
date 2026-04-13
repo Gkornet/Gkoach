@@ -971,10 +971,10 @@ export default function App() {
                 {/* Overige metrics */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 16px" }}>
                   {[
-                    { l: "Slaap",  v: contextEntry?.sleep_h,      u: " u",  c: C.indigo },
-                    { l: "Battery",v: contextEntry?.body_battery,  u: "%",   c: C.teal   },
-                    { l: "Stress", v: contextEntry?.stress,        u: "",    c: C.orange },
-                    { l: "RHR",    v: contextEntry?.rhr,           u: " bpm",c: C.text3  },
+                    { l: "Slaap",         v: contextEntry?.sleep_h,      u: " u",  c: C.indigo },
+                    { l: "Stress",        v: contextEntry?.stress,        u: "",    c: C.orange },
+                    { l: "Body battery",  v: contextEntry?.body_battery,  u: "%",   c: C.teal   },
+                    { l: "Rusthartslag",  v: contextEntry?.rhr,           u: " bpm",c: C.text3  },
                   ].map(m => {
                     const val = parseNum(m.v);
                     return (
