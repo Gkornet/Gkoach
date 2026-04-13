@@ -154,7 +154,8 @@ function getDailyPlan(todayData, contextData, entries) {
 
   // Training: alleen als vandaag echt een activiteit heeft (todayData), niet gisteren
   const trainType = (todayData?.train_type || "").toLowerCase();
-  const garminTrained = isTrue(todayData?.trained);
+  const isWalking = trainType === "walking" || trainType === "casual_walking";
+  const garminTrained = isTrue(todayData?.trained) && !isWalking;
   const typeLabel = todayData?.train_type
     ? todayData.train_type.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase())
     : "";
@@ -309,9 +310,10 @@ BIOMETRICS VANDAAG: ${metrics}
 AL GEDAAN VANDAAG: ${done.length ? done.join(", ") : "nog niets"}
 NOG TE DOEN: ${pending.length ? pending.join(", ") : "alles gedaan"}
 GEPLANDE WORKOUT VANDAAG: ${todayWorkout ? `${todayWorkout.title} (${todayWorkout.sport})` : "geen gepland"}
-WEDSTRIJDEN: 10km Noordwijk 5 juli 2026 · Gym-race Utrecht 4 oktober 2026
+ACHTERGROND: Geen ervaren sporter — leert hardlopen, zittend beroep, herstelt van intensieve periode (faillissement bedrijf). Mentaal herstel is minstens even belangrijk als fysiek. Opbouwend en zacht is het devies.
+DOELEN: 10km Noordwijk 5 juli 2026 · Gym-race Utrecht 4 oktober 2026 (aspirationeel, niet professioneel schema)
 
-Geef één tip van maximaal 2 zinnen. Geen opsommingstekens. Geen headers. Geen opmaak. Gewoon een directe, persoonlijke zin die nu het meest relevant is — gebaseerd op het tijdstip en wat er nog op de planning staat. Spreek de gebruiker direct aan met "je/jij".`;
+Geef één tip van maximaal 2 zinnen. Geen opsommingstekens. Geen headers. Geen opmaak. Gewoon een directe, warme zin die nu het meest relevant is — gebaseerd op het tijdstip en wat er nog op de planning staat. Spreek de gebruiker direct aan met "je/jij". Wees bemoedigend, niet prestatiegericht.`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -339,9 +341,10 @@ ${todayRow ? `VANDAAG (${todayStr}) DATA BESCHIKBAAR: HRV=${todayRow.hrv}, slaap
 
 CONTEXT/VRAAG: ${question || "Geef mijn dagelijkse check-in analyse."}
 
-DOELEN: hogere HRV, optimale slaap, energiek wakker, betere gezondheid, innerlijke rust.
-WEDSTRIJDEN: 10km 5 juli 2026 Noordwijk · Gym-race 4 oktober 2026 Utrecht.
-HARDLOOP METRICS: avg_pace (min:sec/km), cadence (ideaal ~180), ground_contact (ideaal <250ms), vertical_osc (ideaal <9cm), vertical_ratio (ideaal <8%), stride_length. Analyseer loopefficiëntie als beschikbaar.
+ACHTERGROND GEBRUIKER: Geen ervaren sporter — leert hardlopen, zittend beroep, herstelt van intensieve periode (bedrijf failliet). Mentaal herstel even belangrijk als fysiek. Kleine stappen zijn successen. Bouw voorzichtig op.
+DOELEN: meer beweging, hogere HRV, betere slaap, meer energie, innerlijke rust.
+EVENTS (aspirationeel): 10km Noordwijk 5 juli 2026 · Gym-race Utrecht 4 oktober 2026.
+HARDLOOP METRICS (als beschikbaar): avg_pace, cadence (ideaal ~180 spm), ground_contact (<250ms), vertical_osc (<9cm).
 
 Antwoord in EXACT deze structuur:
 ### Hoe sta je ervoor
