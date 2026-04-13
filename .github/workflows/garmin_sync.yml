@@ -43,9 +43,9 @@ jobs:
       - name: Garmin tokens herstellen vanuit Secret
         run: |
           if [ -n "$GARMIN_TOKENS" ]; then
-            mkdir -p backend/.garmin_tokens
-            echo "$GARMIN_TOKENS" | base64 -d | tar -xz -C backend/.garmin_tokens
+            echo "$GARMIN_TOKENS" | base64 -d | tar -xz -C .
             echo "  ✓ Tokens hersteld vanuit Secret"
+            ls backend/.garmin_tokens/ || echo "  ⚠ Token dir leeg"
           fi
         env:
           GARMIN_TOKENS: ${{ secrets.GARMIN_TOKENS }}
