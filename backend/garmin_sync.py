@@ -75,7 +75,7 @@ def get_garmin_data():
     try:
         hrv = client.get_hrv_data(TODAY)
         summary = hrv.get("hrvSummary", {})
-        data["hrv"] = summary.get("lastNight5MinHigh", summary.get("lastNight", ""))
+        data["hrv"] = summary.get("lastNight", summary.get("lastNight5MinHigh", ""))
         print(f"  ✓ HRV: {data['hrv']} ms")
     except Exception as e:
         print(f"  ✗ HRV: {e}")
@@ -175,12 +175,7 @@ def write_to_sheet(garmin_data):
         ws.append_row(HEADERS)
         print(f"  ✓ Nieuw tabblad '{SHEET_TAB}' aangemaakt met headers")
 
-    # DEBUG: toon wat er in de sheet staat
     all_dates = ws.col_values(1)
-    print(f"  DEBUG: TODAY={TODAY}")
-    print(f"  DEBUG: all_dates={all_dates}")
-    print(f"  DEBUG: TODAY in all_dates={TODAY in all_dates}")
-    print(f"  DEBUG: gspread version={gspread.__version__}")
 
     if TODAY in all_dates:
         row_idx = all_dates.index(TODAY) + 1
@@ -266,7 +261,8 @@ HEADERS = [
     "trained", "train_type", "train_min", "train_dist",
     "avg_hr", "max_hr", "avg_pace", "cadence",
     "ground_contact", "vertical_osc", "vertical_ratio", "stride_length", "training_effect", "vo2max",
-    "energy", "mental_unrest", "breathing", "breathing_type", "notes", "sleep_prep"
+    "energy", "mental_unrest", "breathing", "breathing_type", "notes", "sleep_prep",
+    "koffie", "mood"
 ]
 
 

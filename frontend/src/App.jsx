@@ -70,10 +70,12 @@ async function sheetsAppend(row) {
 
 async function sheetsUpdate(rowIdx, row) {
   const token = await getJWT();
-  // HEADERS has 34 columns (A–AH), range must match exactly
-  const lastCol = String.fromCharCode(64 + Math.ceil(row.length / 26)) + String.fromCharCode(64 + (row.length % 26 || 26));
-  // Simpler: hardcode AH for 34 columns
-  const range = `${TAB}!A${rowIdx}:AH${rowIdx}`;
+  // HEADERS has 36 columns (A–AJ): dynamically compute last column
+  const colNum = row.length; // e.g. 36
+  const lastCol = colNum <= 26
+    ? String.fromCharCode(64 + colNum)
+    : String.fromCharCode(64 + Math.floor((colNum - 1) / 26)) + String.fromCharCode(65 + ((colNum - 1) % 26));
+  const range = `${TAB}!A${rowIdx}:${lastCol}${rowIdx}`;
   const res = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
     { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ values: [row] }) }
@@ -93,7 +95,8 @@ const HEADERS = [
   "trained","train_type","train_min","train_dist",
   "avg_hr","max_hr","avg_pace","cadence",
   "ground_contact","vertical_osc","vertical_ratio","stride_length","training_effect","vo2max",
-  "energy","mental_unrest","breathing","breathing_type","notes","sleep_prep"
+  "energy","mental_unrest","breathing","breathing_type","notes","sleep_prep",
+  "koffie","mood"
 ];
 
 // Plan item → entry field mapping (for auto-save)
@@ -433,6 +436,48 @@ const Toggle = ({ checked, onChange }) => (
       }} />
     </span>
   </label>
+);
+
+const Stepper = ({ label, value, onChange, step = 1, min = 0, max = 99, unit = "" }) => {
+  const val = isNaN(parseFloat(value)) ? 0 : parseFloat(value);
+  const dec = String(step).includes(".") ? String(step).split(".")[1].length : 0;
+  return (
+    <div style={{ background: C.fill, borderRadius: 16, padding: "16px 20px" }}>
+      <div style={{ fontSize: 13, color: C.text3, marginBottom: 10 }}>{label}</div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <button onPointerDown={() => onChange(Math.max(min, parseFloat((val - step).toFixed(dec))))}
+          style={{ width: 48, height: 48, borderRadius: 24, background: C.card, border: `1px solid ${C.border}`, fontSize: 26, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 300, color: C.text, flexShrink: 0 }}>−</button>
+        <div style={{ textAlign: "center", flex: 1 }}>
+          <span style={{ fontSize: 32, fontWeight: 700, letterSpacing: "-0.5px" }}>{dec > 0 ? val.toFixed(dec) : val}</span>
+          {unit && <span style={{ fontSize: 14, color: C.text3, marginLeft: 4 }}>{unit}</span>}
+        </div>
+        <button onPointerDown={() => onChange(Math.min(max, parseFloat((val + step).toFixed(dec))))}
+          style={{ width: 48, height: 48, borderRadius: 24, background: C.card, border: `1px solid ${C.border}`, fontSize: 26, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 300, color: C.text, flexShrink: 0 }}>+</button>
+      </div>
+    </div>
+  );
+};
+
+const MOOD_OPTIONS = [
+  { v: 1, emoji: "😔", label: "Slecht" },
+  { v: 2, emoji: "😕", label: "Matig" },
+  { v: 3, emoji: "😐", label: "Oké" },
+  { v: 4, emoji: "🙂", label: "Goed" },
+  { v: 5, emoji: "😊", label: "Top" },
+];
+const MoodPicker = ({ value, onChange }) => (
+  <div style={{ display: "flex", gap: 8, justifyContent: "space-between" }}>
+    {MOOD_OPTIONS.map(m => {
+      const sel = String(value) === String(m.v);
+      return (
+        <button key={m.v} onPointerDown={() => onChange(m.v)}
+          style={{ flex: 1, background: sel ? C.blue + "18" : C.fill, border: sel ? `2px solid ${C.blue}` : "2px solid transparent", borderRadius: 14, padding: "10px 4px", cursor: "pointer", textAlign: "center" }}>
+          <div style={{ fontSize: 26 }}>{m.emoji}</div>
+          <div style={{ fontSize: 10, color: sel ? C.blue : C.text3, marginTop: 3, fontWeight: sel ? 600 : 400 }}>{m.label}</div>
+        </button>
+      );
+    })}
+  </div>
 );
 
 const Field = ({ label, children }) => (
@@ -1041,94 +1086,54 @@ export default function App() {
       {/* ── CHECK-IN ── */}
       {tab === "checkin" && (
         <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "56px 16px 90px" }}>
-          <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px", marginBottom: 4 }}>Invullen</div>
-          <div style={{ fontSize: 15, color: C.text3, marginBottom: 20 }}>Vul aan wat Garmin niet automatisch meet</div>
-
-          {[
-            { title: "Datum", color: C.blue, fields: null, custom: (
-              <Field label="Datum">
-                <input type="date" value={entry.date} onChange={e => set("date", e.target.value)} />
-              </Field>
-            )},
-            { title: "Lichaam", color: C.orange, fields: [
-              { k:"weight",  l:"Gewicht (kg)",       t:"number", step:"0.1", ph:"79.5" },
-              { k:"alcohol", l:"Alcohol (eenheden)",  t:"number", step:"0.5", ph:"0" },
-              { k:"bp_sys",  l:"Bloeddruk sys",       t:"number", ph:"120" },
-              { k:"bp_dia",  l:"Bloeddruk dia",       t:"number", ph:"80" },
-            ]},
-            { title: "Slaap", color: C.indigo, fields: [
-              { k:"sleep_h",    l:"Duur (uur)",          t:"number", step:"0.25", ph:"7.5" },
-              { k:"sleep_q",    l:"Kwaliteit (1–10)",    t:"number", ph:"7" },
-              { k:"sleep_deep", l:"Diepe slaap (uur)",   t:"number", step:"0.25", ph:"1.5" },
-              { k:"sleep_rem",  l:"REM (uur)",           t:"number", step:"0.25", ph:"1.5" },
-            ]},
-            { title: "Vitals", color: C.teal, fields: [
-              { k:"hrv",          l:"HRV (ms)",             t:"number", ph:"45" },
-              { k:"rhr",          l:"Rusthartslag (bpm)",   t:"number", ph:"58" },
-              { k:"body_battery", l:"Body battery (%)",     t:"number", ph:"75" },
-              { k:"steps",        l:"Stappen",              t:"number", ph:"8000" },
-              { k:"energy",       l:"Energie (1–10)",       t:"number", ph:"7" },
-              { k:"stress",       l:"Stress (1–10)",        t:"number", ph:"4" },
-            ]},
-          ].map(section => (
-            <div key={section.title} style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 8 }}>
-              <div style={{ fontSize: 13, fontWeight: 600, color: section.color, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.05em" }}>{section.title}</div>
-              {section.custom || (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                  {section.fields.map(f => (
-                    <Field key={f.k} label={f.l}>
-                      <input type={f.t} step={f.step} placeholder={f.ph} value={entry[f.k]} onChange={e => set(f.k, e.target.value)} />
-                    </Field>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-
-          {/* Training */}
-          <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.orange, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.05em" }}>Training</div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: isTrue(entry.trained) ? 14 : 0 }}>
-              <span style={{ fontSize: 16 }}>Getraind vandaag</span>
-              <Toggle checked={isTrue(entry.trained)} onChange={v => set("trained", v)} />
-            </div>
-            {isTrue(entry.trained) && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-                <Field label="Type">
-                  <select value={entry.train_type} onChange={e => set("train_type", e.target.value)}>
-                    <option value="">Kies...</option>
-                    {["hardlopen","PT","kracht thuis","core","mobiliteit","herstel","cardio","anders"].map(o => <option key={o}>{o}</option>)}
-                  </select>
-                </Field>
-                <Field label="Duur (min)"><input type="number" placeholder="45" value={entry.train_min} onChange={e => set("train_min", e.target.value)} /></Field>
-                <Field label="Afstand (km)"><input type="number" step="0.1" placeholder="5.0" value={entry.train_dist} onChange={e => set("train_dist", e.target.value)} /></Field>
+          {/* Header met datum */}
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 20 }}>
+            <div>
+              <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px" }}>Dagelijkse meting</div>
+              <div style={{ fontSize: 14, color: C.text3, marginTop: 2 }}>
+                {new Date(entry.date + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })}
               </div>
-            )}
+            </div>
+            <input type="date" value={entry.date} onChange={e => set("date", e.target.value)}
+              style={{ fontSize: 13, color: C.text3, background: "none", border: "none", padding: 0, cursor: "pointer", outline: "none", textAlign: "right" }} />
           </div>
 
-          {/* Mentaal */}
-          <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 8 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: C.purple, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.05em" }}>Mentaal & welzijn</div>
-            {[
-              { k: "mental_unrest", l: "Mentale onrust aanwezig" },
-              { k: "breathing",     l: "Ademhaling / meditatie gedaan" },
-            ].map(f => (
-              <div key={f.k} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                <span style={{ fontSize: 16 }}>{f.l}</span>
-                <Toggle checked={isTrue(entry[f.k])} onChange={v => set(f.k, v)} />
-              </div>
-            ))}
-            {isTrue(entry.breathing) && (
-              <div style={{ marginBottom: 12 }}>
-                <Field label="Type oefening">
-                  <input placeholder="box breathing, 4-7-8, bodyscan..." value={entry.breathing_type} onChange={e => set("breathing_type", e.target.value)} />
+          {/* Tellers: Gewicht, Alcohol, Koffie */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 10 }}>
+            <Stepper label="Gewicht" value={entry.weight || 0} onChange={v => set("weight", v)} step={0.1} min={40} max={200} unit="kg" />
+            <Stepper label="Alcohol" value={entry.alcohol || 0} onChange={v => set("alcohol", v)} step={1} min={0} max={20} unit="gl" />
+            <Stepper label="Koffie" value={entry.koffie || 0} onChange={v => set("koffie", v)} step={1} min={0} max={15} unit="kp" />
+          </div>
+
+          {/* Bloeddruk */}
+          <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.red, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.05em" }}>Bloeddruk</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <Field label="Systolisch">
+                  <input type="number" placeholder="120" value={entry.bp_sys} onChange={e => set("bp_sys", e.target.value)} />
                 </Field>
               </div>
-            )}
-            <Field label="Opmerkingen">
-              <textarea rows={3} style={{ resize: "none" }} placeholder="Hoe voel je je? Bijzonderheden..."
-                value={entry.notes} onChange={e => set("notes", e.target.value)} />
-            </Field>
+              <div style={{ fontSize: 22, color: C.text3, paddingTop: 20 }}>/</div>
+              <div style={{ flex: 1 }}>
+                <Field label="Diastolisch">
+                  <input type="number" placeholder="80" value={entry.bp_dia} onChange={e => set("bp_dia", e.target.value)} />
+                </Field>
+              </div>
+            </div>
+          </div>
+
+          {/* Hoe voel ik me */}
+          <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.purple, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.05em" }}>Hoe voel ik me</div>
+            <MoodPicker value={entry.mood} onChange={v => set("mood", v)} />
+          </div>
+
+          {/* Notities */}
+          <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.text3, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.05em" }}>Notities</div>
+            <textarea rows={3} style={{ resize: "none" }} placeholder="Bijzonderheden, opmerkingen..."
+              value={entry.notes} onChange={e => set("notes", e.target.value)} />
           </div>
 
           <button onClick={saveEntry} disabled={syncing} style={{
