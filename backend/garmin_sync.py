@@ -272,11 +272,38 @@ if __name__ == "__main__":
         print("FOUT: Stel GOOGLE_SHEET_ID en GOOGLE_SERVICE_ACCOUNT_JSON in in je .env bestand")
         sys.exit(1)
 
+    # Stap 1: Garmin data ophalen (niet fataal als dit mislukt)
+    garmin_data = {}
+    client = None
+    garmin_ok = False
     try:
         client, garmin_data = get_garmin_data()
-        write_to_sheet(garmin_data)
-        write_planned_workouts(client)
-        print(f"\n✅ Sync voltooid voor {TODAY}")
+        garmin_ok = True
+        print(f"\n✅ Garmin data opgehaald ({len(garmin_data)} velden)")
     except Exception as e:
-        print(f"\n❌ Sync mislukt: {e}")
+        import traceback
+        print(f"\n❌ Garmin ophalen mislukt: {e}")
+        traceback.print_exc()
+        print("  → Ga door met lege Garmin data (rij voor vandaag wordt toch aangemaakt)")
+
+    # Stap 2: Altijd naar Sheets schrijven (zelfs als Garmin leeg is)
+    try:
+        write_to_sheet(garmin_data)
+        print(f"✅ Sheets bijgewerkt voor {TODAY}")
+    except Exception as e:
+        import traceback
+        print(f"\n❌ Sheets schrijven mislukt: {e}")
+        traceback.print_exc()
         sys.exit(1)
+
+    # Stap 3: Geplande workouts (alleen als Garmin werkte)
+    if client:
+        try:
+            write_planned_workouts(client)
+        except Exception as e:
+            print(f"⚠ Geplande workouts mislukt (niet fataal): {e}")
+
+    if garmin_ok:
+        print(f"\n✅ Sync volledig voltooid voor {TODAY}")
+    else:
+        print(f"\n⚠ Sync gedeeltelijk voltooid voor {TODAY} — Garmin data ontbreekt, rij is aangemaakt")
