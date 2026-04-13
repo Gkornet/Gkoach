@@ -939,51 +939,49 @@ export default function App() {
 
 
             {/* Readiness card */}
-            <div style={{ background: C.card, borderRadius: 16, padding: "20px", marginBottom: 12, display: "flex", alignItems: "center", gap: 20 }}>
+            <div style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 16 }}>
               <div style={{ position: "relative", flexShrink: 0 }}>
-                <Ring value={readiness != null && !isNaN(readiness) ? readiness : 0} color={readiness != null && !isNaN(readiness) ? readinessColor(readiness) : C.text3} size={96} stroke={9} />
+                <Ring value={readiness != null && !isNaN(readiness) ? readiness : 0} color={readiness != null && !isNaN(readiness) ? readinessColor(readiness) : C.text3} size={80} stroke={8} />
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, color: readiness != null && !isNaN(readiness) ? readinessColor(readiness) : C.text3, lineHeight: 1 }}>{readiness != null && !isNaN(readiness) ? readiness : "—"}</div>
-                  <div style={{ fontSize: 10, color: C.text3, marginTop: 1 }}>{readiness != null && !isNaN(readiness) ? readinessLabel(readiness) : "Geen data"}</div>
+                  <div style={{ fontSize: 19, fontWeight: 700, color: readiness != null && !isNaN(readiness) ? readinessColor(readiness) : C.text3, lineHeight: 1 }}>{readiness != null && !isNaN(readiness) ? readiness : "—"}</div>
+                  <div style={{ fontSize: 9, color: C.text3, marginTop: 1 }}>{readiness != null && !isNaN(readiness) ? readinessLabel(readiness) : "—"}</div>
                 </div>
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Readiness</div>
-                {/* HRV — drie waarden op één rij */}
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 12, color: C.text3, marginBottom: 4 }}>HRV</div>
-                  <div style={{ display: "flex", gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Readiness</div>
+                {/* HRV rij — label links, waarden rechts uitgelijnd */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                  <span style={{ fontSize: 12, color: C.text3 }}>HRV</span>
+                  <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
                     {[
-                      { l: "nacht", v: contextEntry?.hrv,         },
-                      { l: "7d",    v: contextEntry?.hrv_weekly,  },
-                      { l: "5min",  v: contextEntry?.hrv_5min,    },
+                      { l: "nacht", v: contextEntry?.hrv        },
+                      { l: "7d",    v: contextEntry?.hrv_weekly },
+                      { l: "5min",  v: contextEntry?.hrv_5min   },
                     ].map(m => {
                       const val = parseNum(m.v);
                       return (
                         <div key={m.l} style={{ textAlign: "center" }}>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: !isNaN(val) ? C.green : C.text3, lineHeight: 1 }}>
-                            {!isNaN(val) ? val : "—"}
-                          </div>
-                          <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>{m.l}</div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: !isNaN(val) ? C.green : C.text3, lineHeight: 1 }}>{!isNaN(val) ? val : "—"}</div>
+                          <div style={{ fontSize: 9, color: C.text3, marginTop: 1 }}>{m.l}</div>
                         </div>
                       );
                     })}
-                    <div style={{ fontSize: 12, color: C.text3, alignSelf: "flex-end", paddingBottom: 2 }}>ms</div>
+                    <span style={{ fontSize: 11, color: C.text3 }}>ms</span>
                   </div>
                 </div>
                 {/* Overige metrics */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 16px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px" }}>
                   {[
-                    { l: "Slaap",         v: contextEntry?.sleep_h,      u: " u",  c: C.indigo },
-                    { l: "Stress",        v: contextEntry?.stress,        u: "",    c: C.orange },
-                    { l: "Body battery",  v: contextEntry?.body_battery,  u: "%",   c: C.teal   },
-                    { l: "Rusthartslag",  v: contextEntry?.rhr,           u: " bpm",c: C.text3  },
+                    { l: "Slaap",        v: contextEntry?.sleep_h,      u: " u",  c: C.indigo },
+                    { l: "Stress",       v: contextEntry?.stress,        u: "",    c: C.orange },
+                    { l: "Body battery", v: contextEntry?.body_battery,  u: "%",   c: C.teal   },
+                    { l: "Rusthartslag", v: contextEntry?.rhr,           u: " bpm",c: C.text3  },
                   ].map(m => {
                     const val = parseNum(m.v);
                     return (
                       <div key={m.l} style={{ display: "flex", justifyContent: "space-between" }}>
                         <span style={{ fontSize: 12, color: C.text3 }}>{m.l}</span>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: !isNaN(val) ? m.c : C.text3 }}>{!isNaN(val) ? `${m.v}${m.u}` : "—"}</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: !isNaN(val) ? m.c : C.text3 }}>{!isNaN(val) ? `${m.v}${m.u}` : "—"}</span>
                       </div>
                     );
                   })}
