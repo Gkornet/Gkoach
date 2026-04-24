@@ -1387,6 +1387,7 @@ export default function App() {
       )}
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
         input, select, textarea {
           background: ${C.fill} !important;
           border: none !important;
@@ -1401,10 +1402,12 @@ export default function App() {
           appearance: none;
         }
         input:focus, select:focus, textarea:focus { background: rgba(120,120,128,0.14) !important; }
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulse  { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         @keyframes spin   { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .fade { animation: fadeUp .3s ease; }
+        .fade { animation: fadeUp .25s cubic-bezier(.4,0,.2,1); }
+        .card { box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04); }
+        .card-lift { box-shadow: 0 4px 16px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.05); }
         ::-webkit-scrollbar { display: none; }
       `}</style>
 
@@ -1453,7 +1456,7 @@ export default function App() {
                   <div style={{ fontSize: 13, color: C.text3, marginTop: 1 }}>
                     {new Date(effectiveViewDate + "T12:00:00").toLocaleDateString("nl-NL", { day: "numeric", month: "long", year: "numeric" })}
                   </div>
-                  <div style={{ fontSize: 12, color: C.blue, marginTop: 2, fontWeight: 500, opacity: isToday ? 1 : 0 }}>{greeting}</div>
+                  <div style={{ fontSize: 12, color: C.text3, marginTop: 2, fontWeight: 400, opacity: isToday ? 1 : 0 }}>{greeting}</div>
                 </div>
                 <button onClick={() => nextDate && setViewDate(nextDate)}
                   style={{ width: 36, height: 36, borderRadius: 18, background: "transparent", border: "none", cursor: nextDate ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", opacity: nextDate ? 1 : 0, flexShrink: 0 }}>
@@ -1473,7 +1476,7 @@ export default function App() {
             )}
 
             {/* Readiness card */}
-            <div style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 12, display: "flex", alignItems: "center", gap: 16 }}>
+            <div className="card-lift" style={{ background: C.card, borderRadius: 20, padding: "16px 18px", marginBottom: 12, display: "flex", alignItems: "center", gap: 16 }}>
               <div style={{ position: "relative", flexShrink: 0 }}>
                 <Ring value={readiness != null && !isNaN(readiness) ? readiness : 0} color={readiness != null && !isNaN(readiness) ? readinessColor(readiness) : C.text3} size={80} stroke={8} />
                 <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
@@ -1525,14 +1528,14 @@ export default function App() {
 
             {/* Daily plan */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-              <div style={{ fontSize: 17, fontWeight: 600 }}>Plan voor vandaag</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.04em" }}>Plan voor vandaag</div>
               <div style={{ fontSize: 13, color: C.text3 }}>{doneTasks}/{plan.length}</div>
             </div>
             <div style={{ height: 3, background: C.fill, borderRadius: 2, marginBottom: 12, overflow: "hidden" }}>
               <div style={{ height: "100%", width: `${(doneTasks/plan.length)*100}%`, background: C.green, borderRadius: 2, transition: "width 0.4s ease" }} />
             </div>
 
-            <div style={{ background: C.card, borderRadius: 16, overflow: "hidden", marginBottom: 12 }}>
+            <div className="card" style={{ background: C.card, borderRadius: 18, overflow: "hidden", marginBottom: 12 }}>
               {plan.map((task, i) => {
                 const done = task.done || !!planDone[task.id];
                 return (
@@ -1584,7 +1587,7 @@ export default function App() {
               const typeLabel = t => (t||"").replace(/_/g," ").replace(/\b\w/g, c=>c.toUpperCase());
               const isWalkType = t => (t||"").includes("walk");
               return (
-                <div style={{ background: C.card, borderRadius: 16, overflow: "hidden", marginBottom: 12 }}>
+                <div style={{ background: C.card, borderRadius: 18, overflow: "hidden", marginBottom: 12 }}>
                   <div style={{ padding: "14px 16px 10px", fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                     Activiteiten vandaag
                   </div>
@@ -1649,8 +1652,8 @@ export default function App() {
               ];
               return (
                 <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Aankomende events</div>
-                  <div style={{ background: C.card, borderRadius: 16, overflow: "hidden" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>Aankomende events</div>
+                  <div className="card" style={{ background: C.card, borderRadius: 18, overflow: "hidden" }}>
                     {events.map((ev, i) => {
                       const urgency = ev.days < 14 ? C.red : ev.days < 42 ? C.orange : C.green;
                       const scColor = sc != null ? eventScoreColor(sc, ev.days) : C.text3;
@@ -1721,8 +1724,8 @@ export default function App() {
               const trainedToday = plan.find(t => t.id === "training")?.done || false;
               return (
                 <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Garmin trainingsplan</div>
-                  <div style={{ background: C.card, borderRadius: 16, overflow: "hidden" }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>Garmin trainingsplan</div>
+                  <div className="card" style={{ background: C.card, borderRadius: 18, overflow: "hidden" }}>
                     {upcoming.map((p, i) => {
                       const isToday = p.date === today();
                       const isDone  = isToday && trainedToday;
@@ -2482,21 +2485,25 @@ export default function App() {
         display: "flex", justifyContent: "space-around"
       }}>
         {[
-          { id: "vandaag", label: "Vandaag",  emoji: "🏠" },
-          { id: "coach",   label: "Coach",    emoji: "✦"  },
-          { id: "checkin", label: "Invullen", emoji: "+"  },
-          { id: "trends",  label: "Trends",   emoji: "↗"  },
-          { id: "setup",   label: "Meer",     emoji: "⋯"  },
-        ].map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
-            background: "none", border: "none", cursor: "pointer", padding: "4px 12px",
-            color: tab === t.id ? C.blue : C.text3, fontFamily: "inherit", minWidth: 60
-          }}>
-            <span style={{ fontSize: 22, lineHeight: 1 }}>{t.emoji}</span>
-            <span style={{ fontSize: 10, fontWeight: tab === t.id ? 600 : 400 }}>{t.label}</span>
-          </button>
-        ))}
+          { id: "vandaag", label: "Vandaag", icon: (c) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H5a1 1 0 01-1-1V9.5z" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/><path d="M9 21V12h6v9" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/></svg> },
+          { id: "coach",   label: "Coach",   icon: (c) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 2a7 7 0 017 7c0 3-1.8 5.6-4.5 6.7V17h-5v-1.3C6.8 14.6 5 12 5 9a7 7 0 017-7z" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/><path d="M9.5 21h5M10 17h4" stroke={c} strokeWidth="1.6" strokeLinecap="round"/></svg> },
+          { id: "checkin", label: "Invullen", icon: (c) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke={c} strokeWidth="1.6"/><path d="M12 8v4M12 16h.01" stroke={c} strokeWidth="1.8" strokeLinecap="round"/></svg> },
+          { id: "trends",  label: "Trends",  icon: (c) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 18l5-5 4 3 7-9" stroke={c} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/></svg> },
+          { id: "setup",   label: "Meer",    icon: (c) => <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="5" r="1.2" fill={c}/><circle cx="12" cy="12" r="1.2" fill={c}/><circle cx="12" cy="19" r="1.2" fill={c}/></svg> },
+        ].map(t => {
+          const active = tab === t.id;
+          const c = active ? C.blue : C.text3;
+          return (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{
+              display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+              background: "none", border: "none", cursor: "pointer", padding: "4px 12px",
+              fontFamily: "inherit", minWidth: 60, transition: "opacity .15s"
+            }}>
+              {t.icon(c)}
+              <span style={{ fontSize: 10, fontWeight: active ? 600 : 400, color: c, letterSpacing: "0.01em" }}>{t.label}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
