@@ -1227,7 +1227,7 @@ export default function App() {
   useEffect(() => {
     if (tab !== "coach" || loading || !CLAUDE_KEY || entries.length === 0) return;
     const runs = entries
-      .filter(e => (e.train_type || "").toLowerCase().includes("run") && e.cadence)
+      .filter(e => (e.train_type || "").toLowerCase().includes("run") && e.train_dist)
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 6);
     if (runs.length === 0) return;
@@ -1904,7 +1904,7 @@ export default function App() {
           {/* Loopanalyse — verschijnt als er runs met form-data zijn */}
           {(() => {
             const runs = entries
-              .filter(e => (e.train_type || "").toLowerCase().includes("run") && e.cadence)
+              .filter(e => (e.train_type || "").toLowerCase().includes("run") && e.train_dist)
               .sort((a, b) => b.date.localeCompare(a.date))
               .slice(0, 6);
             if (runs.length === 0) return null;
