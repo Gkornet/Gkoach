@@ -1810,19 +1810,6 @@ export default function App() {
               );
             })()}
 
-            {sheetMode && (
-              <button
-                onClick={triggerGarminSync}
-                disabled={ghSyncing}
-                style={{ width: "100%", background: ghSyncing ? C.green + "20" : C.fill, border: "none", borderRadius: 12, padding: "12px 16px", fontSize: 14, color: ghSyncing ? C.green : C.text3, cursor: ghSyncing ? "default" : "pointer", marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all .3s" }}>
-                <span style={{ display: "inline-block", animation: ghSyncing ? "spin 1s linear infinite" : "none" }}>↻</span>
-                <span>
-                  {ghSyncing
-                    ? "Garmin sync bezig…"
-                    : `Ververs data${lastRefresh ? ` · ${lastRefresh.toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" })}` : ""}`}
-                </span>
-              </button>
-            )}
             {!sheetMode && (
               <div style={{ background: C.orange + "15", borderRadius: 12, padding: "12px 16px", fontSize: 13, color: C.orange }}>
                 Lokale modus — configureer Google Sheets via Meer → Instellingen.
