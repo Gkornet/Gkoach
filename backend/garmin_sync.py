@@ -76,7 +76,7 @@ def get_garmin_data():
         hrv = client.get_hrv_data(TODAY)
         summary = hrv.get("hrvSummary", {})
         # Gebruik `or ""` zodat None (Garmin retourneert null als data ontbreekt) ook "" wordt
-        data["hrv"]      = summary.get("lastNight")         or ""
+        data["hrv"]      = summary.get("lastNightAvg")       or ""
         data["hrv_7d"]   = summary.get("weeklyAvg")         or ""
         data["hrv_5min"] = summary.get("lastNight5MinHigh") or ""
         print(f"  ✓ HRV nacht={data['hrv']} 7d={data['hrv_7d']} 5min={data['hrv_5min']} ms")
