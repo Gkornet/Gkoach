@@ -1475,56 +1475,84 @@ export default function App() {
               </div>
             )}
 
-            {/* Readiness card */}
-            <div className="card-lift" style={{ background: C.card, borderRadius: 20, padding: "16px 18px", marginBottom: 12, display: "flex", alignItems: "center", gap: 16 }}>
-              <div style={{ position: "relative", flexShrink: 0 }}>
-                <Ring value={readiness != null && !isNaN(readiness) ? readiness : 0} color={readiness != null && !isNaN(readiness) ? readinessColor(readiness) : C.text3} size={80} stroke={8} />
-                <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                  <div style={{ fontSize: 19, fontWeight: 700, color: readiness != null && !isNaN(readiness) ? readinessColor(readiness) : C.text3, lineHeight: 1 }}>{readiness != null && !isNaN(readiness) ? readiness : "—"}</div>
-                  <div style={{ fontSize: 9, color: C.text3, marginTop: 1 }}>{readiness != null && !isNaN(readiness) ? readinessLabel(readiness) : "—"}</div>
+            {/* Readiness card — compact 2-laags */}
+            {(() => {
+              const r = readiness;
+              const rOk = r != null && !isNaN(r);
+              const rColor = rOk ? readinessColor(r) : C.text3;
+              const rLabel = rOk ? readinessLabel(r) : "—";
+              const hrv  = parseNum(hrvNachtEntry?.hrv);
+              const hrv7 = parseNum(computedHrv7d);
+              const sleep = parseNum(contextEntry?.sleep_h);
+              const bat  = parseNum(contextEntry?.body_battery);
+              const rhr  = parseNum(contextEntry?.rhr);
+              const stress = parseNum(contextEntry?.stress);
+
+              // HRV kleur: groen >50, oranje 35-50, rood <35
+              const hrvColor = isNaN(hrv) ? C.text3 : hrv > 50 ? C.green : hrv > 35 ? C.orange : C.red;
+              // Slaap kleur: groen >7, oranje 6-7, rood <6
+              const sleepColor = isNaN(sleep) ? C.text3 : sleep >= 7 ? C.green : sleep >= 6 ? C.orange : C.red;
+              // Battery kleur: groen >60, oranje 30-60, rood <30
+              const batColor = isNaN(bat) ? C.text3 : bat > 60 ? C.green : bat > 30 ? C.orange : C.red;
+              // Stress kleur: groen <30, oranje 30-60, rood >60
+              const stressColor = isNaN(stress) ? C.text3 : stress < 30 ? C.green : stress < 60 ? C.orange : C.red;
+
+              const Pill = ({ label, value, unit, color }) => (
+                <div style={{ flex: 1, textAlign: "center" }}>
+                  <div style={{ fontSize: isNaN(value) ? 15 : 17, fontWeight: 700, color: isNaN(value) ? C.text3 : color, lineHeight: 1 }}>
+                    {isNaN(value) ? "—" : `${value}${unit}`}
+                  </div>
+                  <div style={{ fontSize: 10, color: C.text3, marginTop: 3, letterSpacing: "0.01em" }}>{label}</div>
                 </div>
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>Readiness</div>
-                {/* HRV rij — alles rechts uitgelijnd */}
-                <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", marginBottom: 6 }}>
-                  <div style={{ display: "flex", gap: 12, alignItems: "baseline" }}>
-                    <span style={{ fontSize: 11, color: C.text3, alignSelf: "center" }}>HRV</span>
-                    {[
-                      { l: "nacht", v: hrvNachtEntry?.hrv  },
-                      { l: "7d",    v: computedHrv7d        },
-                      { l: "5min",  v: hrv5minEntry?.hrv_5min },
-                    ].map(m => {
-                      const val = parseNum(m.v);
-                      return (
-                        <div key={m.l} style={{ textAlign: "center" }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: !isNaN(val) ? C.green : C.text3, lineHeight: 1 }}>{!isNaN(val) ? val : "—"}</div>
-                          <div style={{ fontSize: 9, color: C.text3, marginTop: 1 }}>{m.l}</div>
-                        </div>
-                      );
-                    })}
-                    <span style={{ fontSize: 11, color: C.text3 }}>ms</span>
+              );
+
+              return (
+                <div className="card-lift" style={{ background: C.card, borderRadius: 20, padding: "14px 16px 16px", marginBottom: 12 }}>
+                  {/* Rij 1: ring + score + label + HRV nacht */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                    <div style={{ position: "relative", flexShrink: 0 }}>
+                      <Ring value={rOk ? r : 0} color={rColor} size={56} stroke={6} />
+                      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: rColor, lineHeight: 1 }}>{rOk ? r : "—"}</div>
+                      </div>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                        <span style={{ fontSize: 17, fontWeight: 700 }}>Readiness</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: rColor }}>{rLabel}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: C.text3, marginTop: 2 }}>
+                        {rOk
+                          ? r >= 75 ? "Goed om te trainen" : r >= 50 ? "Lichte inspanning ok" : "Hersteldag aanbevolen"
+                          : "Wacht op Garmin sync"}
+                      </div>
+                    </div>
+                    {/* HRV nacht apart rechtsboven */}
+                    {!isNaN(hrv) && (
+                      <div style={{ textAlign: "center", flexShrink: 0 }}>
+                        <div style={{ fontSize: 20, fontWeight: 700, color: hrvColor, lineHeight: 1 }}>{hrv}</div>
+                        <div style={{ fontSize: 10, color: C.text3, marginTop: 2 }}>HRV ms</div>
+                        {!isNaN(hrv7) && <div style={{ fontSize: 10, color: C.text3 }}>7d {hrv7}</div>}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Scheidingslijn */}
+                  <div style={{ height: 1, background: C.border, marginBottom: 14 }} />
+
+                  {/* Rij 2: metric pills */}
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <Pill label="Slaap" value={sleep} unit="u" color={sleepColor} />
+                    <div style={{ width: 1, background: C.border, alignSelf: "stretch" }} />
+                    <Pill label="Battery" value={bat} unit="%" color={batColor} />
+                    <div style={{ width: 1, background: C.border, alignSelf: "stretch" }} />
+                    <Pill label="Stress" value={stress} unit="" color={stressColor} />
+                    <div style={{ width: 1, background: C.border, alignSelf: "stretch" }} />
+                    <Pill label="RHR" value={rhr} unit="" color={C.text2} />
                   </div>
                 </div>
-                {/* Overige metrics */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px" }}>
-                  {[
-                    { l: "Slaap",        v: contextEntry?.sleep_h,      u: " u",  c: C.indigo },
-                    { l: "Stress",       v: contextEntry?.stress,        u: "",    c: C.orange },
-                    { l: "Battery",      v: contextEntry?.body_battery,  u: "%",   c: C.teal   },
-                    { l: "RHR",          v: contextEntry?.rhr,           u: " bpm",c: C.text3  },
-                  ].map(m => {
-                    const val = parseNum(m.v);
-                    return (
-                      <div key={m.l}>
-                        <div style={{ fontSize: 10, color: C.text3, marginBottom: 1 }}>{m.l}</div>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: !isNaN(val) ? m.c : C.text3, lineHeight: 1.2 }}>{!isNaN(val) ? `${m.v}${m.u}` : "—"}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Daily plan */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
@@ -1536,7 +1564,43 @@ export default function App() {
             </div>
 
             <div className="card" style={{ background: C.card, borderRadius: 18, overflow: "hidden", marginBottom: 12 }}>
-              {plan.map((task, i) => {
+              {[...plan].sort((a, b) => {
+                // Gedane taken altijd naar beneden
+                const aDone = a.done || !!planDone[a.id];
+                const bDone = b.done || !!planDone[b.id];
+                if (aDone !== bDone) return aDone ? 1 : -1;
+                // Tijdgebaseerde prioriteit
+                const priority = (t) => {
+                  const id = t.id || "";
+                  if (hour < 10) { // ochtend
+                    if (id === "ochtend")   return 0;
+                    if (id === "training")  return 1;
+                    if (id === "breathing") return 2;
+                    if (id === "checkin")   return 3;
+                    if (id === "stappen")   return 4;
+                    if (id === "kracht")    return 5;
+                    if (id === "slaap")     return 9;
+                  } else if (hour < 17) { // middag
+                    if (id === "training")  return 0;
+                    if (id === "stappen")   return 1;
+                    if (id === "kracht")    return 2;
+                    if (id === "checkin")   return 3;
+                    if (id === "breathing") return 4;
+                    if (id === "ochtend")   return 5;
+                    if (id === "slaap")     return 9;
+                  } else { // avond
+                    if (id === "slaap")     return 0;
+                    if (id === "stappen")   return 1;
+                    if (id === "checkin")   return 2;
+                    if (id === "training")  return 3;
+                    if (id === "breathing") return 4;
+                    if (id === "kracht")    return 5;
+                    if (id === "ochtend")   return 6;
+                  }
+                  return 7;
+                };
+                return priority(a) - priority(b);
+              }).map((task, i) => {
                 const done = task.done || !!planDone[task.id];
                 return (
                   <div key={task.id} onClick={() => task.id === "kracht" ? setShowExercise(true) : setTaskDetail({ ...task, done })}
