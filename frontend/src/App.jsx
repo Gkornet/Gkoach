@@ -529,6 +529,60 @@ Toon: direct, concreet, geen wolligheid. Max 180 woorden totaal.`;
   return d2.content?.find(b => b.type === "text")?.text || "";
 }
 
+async function fetchRunCoaching(runs) {
+  // runs = array van loopsessies met form-metrics, meest recent eerst
+  const fmt = runs.map(r => ({
+    date: r.date,
+    dist: r.train_dist, min: r.train_min, pace: r.avg_pace,
+    hr: r.avg_hr, max_hr: r.max_hr,
+    cadence: r.cadence, ground_contact: r.ground_contact,
+    vertical_osc: r.vertical_osc, vertical_ratio: r.vertical_ratio,
+    stride_length: r.stride_length, training_effect: r.training_effect,
+    vo2max: r.vo2max,
+  }));
+
+  const latest = fmt[0];
+  const prompt = `Je bent een loopcoach die specifiek beginnende hardlopers begeleidt. Analyseer de loopvorm en geef concrete tips.
+
+LOOPSESSIES (meest recent eerst, max 6):
+${JSON.stringify(fmt, null, 2)}
+
+IDEALE WAARDEN VOOR BEGINNERS:
+- Cadans: 165-175 spm (streef naar ~175, hogere cadans = minder impact)
+- Grondcontact: <270ms (lager = efficiënter)
+- Verticale oscillatie: <9 cm (minder op-en-neer = minder energieverlies)
+- Verticale ratio: <9% (balans tussen omhoog en voorwaarts)
+- Hartslag zone 2 (licht tempo): 130-150 bpm
+- Training effect aerob: 2.0-3.5 (opbouwend maar niet te zwaar)
+
+GEBRUIKERSPROFIEL: Beginner hardloper, zittend beroep, voorzichtig opbouwen. Doel: 10km Noordwijk 5 juli 2026 (nog ${Math.max(0, Math.ceil((new Date("2026-07-05") - new Date()) / 86400000))} dagen).
+
+Geef analyse in EXACT deze 3 secties (gebruik ### als scheidingsteken):
+### Loopvorm nu
+Beschrijf in 2-3 zinnen wat de data zegt over de loophouding. Noem concrete getallen. Wat gaat goed, wat kan beter.
+
+### Trend
+Beschrijf in 1-2 zinnen of de vorm verbetert over de sessies. Alleen als er ≥2 runs zijn.
+
+### Focus voor volgende run
+Geef 1-2 hele concrete, uitvoerbare tips voor de volgende loopsessie. Denk aan: cadans verhogen (bijv. stap voor stap), armpositie, voetlanding, ademhaling. Praktisch en simpel.
+
+Toon: direct, technisch maar toegankelijk, geen wolligheid. Max 160 woorden totaal.`;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": CLAUDE_KEY,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 400, messages: [{ role: "user", content: prompt }] })
+  });
+  const d = await res.json();
+  return d.content?.find(b => b.type === "text")?.text || "";
+}
+
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
   bg:      "#F2F2F7",
@@ -919,6 +973,8 @@ export default function App() {
   const [coachLoad,      setCoachLoad]      = useState(false);
   const [dailyCoaching,  setDailyCoaching]  = useState("");
   const [dailyCoachLoad, setDailyCoachLoad] = useState(false);
+  const [runCoaching,    setRunCoaching]    = useState("");
+  const [runCoachLoad,   setRunCoachLoad]   = useState(false);
   const [dailyTip,       setDailyTip]       = useState("");
   const [dailyTipLoad,   setDailyTipLoad]   = useState(false);
   const [question,  setQuestion]  = useState("");
@@ -1166,6 +1222,24 @@ export default function App() {
       runDailyTip(plan, planned, readiness, displayEntry, contextEntry);
     }
   }, [tab, isToday, loading, entries.length, planDone]); // eslint-disable-line
+
+  // Auto-fetch loopanalyse als coach tab opent en er runs zijn
+  useEffect(() => {
+    if (tab !== "coach" || loading || !CLAUDE_KEY || entries.length === 0) return;
+    const runs = entries
+      .filter(e => (e.train_type || "").toLowerCase().includes("run") && e.cadence)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 6);
+    if (runs.length === 0) return;
+    const cacheKey = `run_coaching_${runs[0].date}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) { setRunCoaching(cached); return; }
+    setRunCoachLoad(true);
+    fetchRunCoaching(runs)
+      .then(r => { if (r) { setRunCoaching(r); localStorage.setItem(cacheKey, r); } })
+      .catch(() => {})
+      .finally(() => setRunCoachLoad(false));
+  }, [tab, loading, entries.length]); // eslint-disable-line
 
   // Auto-fetch dagelijkse coaching als coach tab opent
   useEffect(() => {
@@ -1826,6 +1900,83 @@ export default function App() {
           <div style={{ fontSize: 15, color: C.text3, marginBottom: 20 }}>
             {new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })}
           </div>
+
+          {/* Loopanalyse — verschijnt als er runs met form-data zijn */}
+          {(() => {
+            const runs = entries
+              .filter(e => (e.train_type || "").toLowerCase().includes("run") && e.cadence)
+              .sort((a, b) => b.date.localeCompare(a.date))
+              .slice(0, 6);
+            if (runs.length === 0) return null;
+            const latest = runs[0];
+            const metricRow = (label, value, unit, ideal, idealLabel, good) => {
+              const color = good === null ? C.text3 : good ? C.green : C.orange;
+              return (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ fontSize: 14, color: C.text2 }}>{label}</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 15, fontWeight: 600, color }}>{value ? `${value} ${unit}` : "—"}</span>
+                    <span style={{ fontSize: 12, color: C.text3 }}>{idealLabel}</span>
+                  </div>
+                </div>
+              );
+            };
+            const cad = parseNum(latest.cadence);
+            const gc  = parseNum(latest.ground_contact);
+            const vo  = parseNum(latest.vertical_osc);
+            const vr  = parseNum(latest.vertical_ratio);
+            const hr  = parseNum(latest.avg_hr);
+            return (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>Loopanalyse</div>
+                <div style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, color: C.text3, marginBottom: 10 }}>
+                    Laatste run: {new Date(latest.date + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "short" })} · {latest.train_dist} km · {latest.avg_pace}/km
+                  </div>
+                  {metricRow("Cadans", cad, "spm", 175, "ideaal ≥175", cad ? cad >= 170 : null)}
+                  {metricRow("Grondcontact", gc, "ms", 270, "ideaal <270", gc ? gc < 270 : null)}
+                  {metricRow("Vert. oscillatie", vo, "cm", 9, "ideaal <9", vo ? vo < 9 : null)}
+                  {metricRow("Vert. ratio", vr ? vr.toFixed(1) : null, "%", 9, "ideaal <9%", vr ? vr < 9 : null)}
+                  {metricRow("Gem. hartslag", hr, "bpm", null, "zone 2: 130-150", hr ? (hr >= 125 && hr <= 155) : null)}
+                </div>
+
+                {runCoachLoad && (
+                  <div style={{ textAlign: "center", padding: "20px 0", color: C.text3, fontSize: 14 }}>Loopanalyse laden...</div>
+                )}
+                {runCoaching && !runCoachLoad && (() => {
+                  const sectionIcons = { "Loopvorm nu": "🏃", "Trend": "📈", "Focus voor volgende run": "🎯" };
+                  const sectionColors = { "Loopvorm nu": C.blue, "Trend": C.purple, "Focus voor volgende run": C.orange };
+                  return (
+                    <div>
+                      {runCoaching.split(/###\s+/).filter(Boolean).map((s, i) => {
+                        const [title, ...rest] = s.trim().split("\n");
+                        const t = title.trim();
+                        return (
+                          <div key={i} style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 8 }}>
+                            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
+                              <span style={{ fontSize: 18 }}>{sectionIcons[t] || "•"}</span>
+                              <span style={{ fontSize: 14, fontWeight: 700, color: sectionColors[t] || C.text }}>{t}</span>
+                            </div>
+                            <div style={{ fontSize: 15, color: C.text2, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{rest.join("\n").trim()}</div>
+                          </div>
+                        );
+                      })}
+                      <div style={{ textAlign: "right", marginTop: 4 }}>
+                        <button onClick={() => {
+                          const cacheKey = `run_coaching_${runs[0].date}`;
+                          localStorage.removeItem(cacheKey);
+                          setRunCoaching(""); setRunCoachLoad(true);
+                          fetchRunCoaching(runs)
+                            .then(r => { if (r) { setRunCoaching(r); localStorage.setItem(cacheKey, r); } })
+                            .catch(() => {}).finally(() => setRunCoachLoad(false));
+                        }} style={{ fontSize: 12, color: C.text3, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}>↻ vernieuw</button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
 
           {/* Dagelijks advies — auto-geladen */}
           {dailyCoachLoad && (
