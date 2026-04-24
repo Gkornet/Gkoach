@@ -276,6 +276,15 @@ def write_planned_workouts(client):
             print(f"  ⚠ Kalender maand {month}: {e}")
 
     items.sort(key=lambda x: x["date"])
+    # Dedupliceer op workout_id (Garmin kan zelfde workout in beide maanden retourneren)
+    seen_ids = set()
+    unique_items = []
+    for item in items:
+        key = item["workout_id"] or f"{item['date']}_{item['title']}"
+        if key not in seen_ids:
+            seen_ids.add(key)
+            unique_items.append(item)
+    items = unique_items
     print(f"  ✓ {len(items)} geplande workouts gevonden")
 
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -289,9 +298,9 @@ def write_planned_workouts(client):
     except gspread.WorksheetNotFound:
         ws = sh.add_worksheet(title=PLANNED_TAB, rows=200, cols=10)
 
-    ws.append_row(PLANNED_HEADERS)
+    ws.append_row(PLANNED_HEADERS, table_range="A1")
     for item in items:
-        ws.append_row([item[h] for h in PLANNED_HEADERS])
+        ws.append_row([item[h] for h in PLANNED_HEADERS], table_range="A1")
     print(f"  ✓ planned_workouts tab bijgewerkt ({len(items)} rijen)")
 
 
