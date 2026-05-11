@@ -27,11 +27,11 @@ NEW_HEADERS = [
     "trained", "train_type", "train_min", "train_dist",        # Q–T
     "avg_hr", "max_hr", "avg_pace", "cadence",                 # U–X
     "ground_contact", "vertical_osc", "vertical_ratio",        # Y–AA
-    "stride_length", "training_effect", "vo2max",              # AB–AD
-    "energy", "mental_unrest", "breathing", "breathing_type",  # AE–AH
-    "notes", "sleep_prep", "koffie", "mood",                   # AI–AL
-    "activities",                                               # AM
-    "step_goal",                                               # AN
+    "stride_length", "training_effect", "vo2max", "run_power", # AB–AE
+    "energy", "mental_unrest", "breathing", "breathing_type",  # AF–AI
+    "notes", "sleep_prep", "koffie", "mood",                   # AJ–AM
+    "activities",                                               # AN
+    "step_goal",                                               # AO
 ]
 
 DATE_COL = "date"

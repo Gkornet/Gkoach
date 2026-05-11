@@ -93,16 +93,16 @@ async function sheetsUpdate(rowIdx, row) {
 const HEADERS = [
   "date","weight","alcohol","bp_sys","bp_dia",                // A–E
   "sleep_h","sleep_q","sleep_deep","sleep_rem",               // F–I
-  "hrv","hrv_7d","hrv_5min",                                  // J–L  ← nieuw
+  "hrv","hrv_7d","hrv_5min",                                  // J–L
   "rhr","stress","body_battery","steps",                      // M–P
   "trained","train_type","train_min","train_dist",            // Q–T
   "avg_hr","max_hr","avg_pace","cadence",                     // U–X
   "ground_contact","vertical_osc","vertical_ratio",           // Y–AA
-  "stride_length","training_effect","vo2max",                 // AB–AD
-  "energy","mental_unrest","breathing","breathing_type",      // AE–AH
-  "notes","sleep_prep","koffie","mood",                       // AI–AL
-  "activities",                                               // AM
-  "step_goal",                                               // AN
+  "stride_length","training_effect","vo2max","run_power",     // AB–AE
+  "energy","mental_unrest","breathing","breathing_type",      // AF–AI
+  "notes","sleep_prep","koffie","mood",                       // AJ–AM
+  "activities",                                               // AN
+  "step_goal",                                               // AO
 ];
 
 // Plan item → entry field mapping (for auto-save)
@@ -537,8 +537,8 @@ async function fetchRunCoaching(runs) {
     hr: r.avg_hr, max_hr: r.max_hr,
     cadence: r.cadence, ground_contact: r.ground_contact,
     vertical_osc: r.vertical_osc, vertical_ratio: r.vertical_ratio,
-    stride_length: r.stride_length, training_effect: r.training_effect,
-    vo2max: r.vo2max,
+    stride_length: r.stride_length, run_power: r.run_power,
+    training_effect: r.training_effect, vo2max: r.vo2max,
   }));
 
   const latest = fmt[0];
@@ -547,13 +547,14 @@ async function fetchRunCoaching(runs) {
 LOOPSESSIES (meest recent eerst, max 6):
 ${JSON.stringify(fmt, null, 2)}
 
-IDEALE WAARDEN VOOR BEGINNERS:
-- Cadans: 165-175 spm (streef naar ~175, hogere cadans = minder impact)
-- Grondcontact: <270ms (lager = efficiënter)
-- Verticale oscillatie: <9 cm (minder op-en-neer = minder energieverlies)
-- Verticale ratio: <9% (balans tussen omhoog en voorwaarts)
-- Hartslag zone 2 (licht tempo): 130-150 bpm
-- Training effect aerob: 2.0-3.5 (opbouwend maar niet te zwaar)
+UITLEG VAN DE METRIEKEN:
+- cadence (spm): stap-frequentie. Ideaal ≥175 spm. Lage cadans = langere stappen = meer blessuredruk op knieën.
+- ground_contact (ms): hoe lang de voet de grond raakt. Ideaal <270 ms. Hoger = zwaarder, minder veerkracht.
+- vertical_osc (cm): hoeveel je per stap omhoog beweegt. Ideaal <9 cm. Meer omhoog = meer verspilde energie.
+- vertical_ratio (%): % energie omhoog vs vooruit. Ideaal <9%. Lager = efficiënter.
+- stride_length (m): afstand per stap. Hangt af van tempo, geen universaal ideaal.
+- run_power (W): loopvermogen in watt. Hogere watt bij dezelfde hartslag = beter getraind.
+- training_effect: type trainingseffect (VO2MAX = intensief, BASE = rustig opbouwen, RECOVERY = herstel).
 
 GEBRUIKERSPROFIEL: Beginner hardloper, zittend beroep, voorzichtig opbouwen. Doel: 10km Noordwijk 5 juli 2026 (nog ${Math.max(0, Math.ceil((new Date("2026-07-05") - new Date()) / 86400000))} dagen).
 
@@ -567,7 +568,7 @@ Beschrijf in 1-2 zinnen of de vorm verbetert over de sessies. Alleen als er ≥2
 ### Focus voor volgende run
 Geef 1-2 hele concrete, uitvoerbare tips voor de volgende loopsessie. Denk aan: cadans verhogen (bijv. stap voor stap), armpositie, voetlanding, ademhaling. Praktisch en simpel.
 
-Toon: direct, technisch maar toegankelijk, geen wolligheid. Max 160 woorden totaal.`;
+Toon: direct, technisch maar toegankelijk, geen wolligheid. Max 180 woorden totaal.`;
 
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -1993,6 +1994,14 @@ export default function App() {
             const vo  = parseNum(latest.vertical_osc);
             const vr  = parseNum(latest.vertical_ratio);
             const hr  = parseNum(latest.avg_hr);
+            const sl  = parseNum(latest.stride_length);
+            const pw  = parseNum(latest.run_power);
+            const te  = latest.training_effect || null;
+            const teLabels = {
+              VO2MAX: "VO2max ↑", TEMPO: "tempo", RECOVERY: "herstel",
+              BASE: "basisuithoudingsvermogen", THRESHOLD: "drempel",
+              OVEREACHING: "te zwaar", NO_EFFECT: "geen effect"
+            };
             return (
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>Loopanalyse</div>
@@ -2000,10 +2009,20 @@ export default function App() {
                   <div style={{ fontSize: 13, color: C.text3, marginBottom: 10 }}>
                     Laatste run: {new Date(latest.date + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "short" })} · {latest.train_dist} km · {latest.avg_pace}/km
                   </div>
-                  {metricRow("Cadans", cad, "spm", 175, "ideaal ≥175", cad ? cad >= 170 : null)}
-                  {metricRow("Grondcontact", gc, "ms", 270, "ideaal <270", gc ? gc < 270 : null)}
-                  {metricRow("Vert. oscillatie", vo, "cm", 9, "ideaal <9", vo ? vo < 9 : null)}
-                  {metricRow("Vert. ratio", vr ? vr.toFixed(1) : null, "%", 9, "ideaal <9%", vr ? vr < 9 : null)}
+                  {metricRow("Cadans", cad, "spm", 175, "ideaal ≥175  (stap-frequentie)", cad ? cad >= 170 : null)}
+                  {metricRow("Grondcontact", gc, "ms", 270, "ideaal <270  (voet op de grond)", gc ? gc < 270 : null)}
+                  {metricRow("Verticale beweging", vo, "cm", 9, "ideaal <9  (hoeveel je opveert)", vo ? vo < 9 : null)}
+                  {metricRow("Verticale ratio", vr ? vr.toFixed(1) : null, "%", 9, "ideaal <9%  (energie omhoog vs vooruit)", vr ? vr < 9 : null)}
+                  {metricRow("Staplengte", sl, "m", null, "afstand per stap", null)}
+                  {pw ? metricRow("Loopvermogen", pw, "W", null, "vermogen in watt", null) : null}
+                  {te ? (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                      <div style={{ fontSize: 14, color: C.text2 }}>Trainingseffect</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: C.blue }}>{teLabels[te] || te.toLowerCase()}</span>
+                      </div>
+                    </div>
+                  ) : null}
                   {metricRow("Gem. hartslag", hr, "bpm", null, "zone 2: 130-150", hr ? (hr >= 125 && hr <= 155) : null)}
                 </div>
 

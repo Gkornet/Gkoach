@@ -154,13 +154,25 @@ def get_garmin_data():
             if primary.get("activityId") and "run" in ptype.lower():
                 try:
                     details = client.get_activity(primary["activityId"])
-                    data["cadence"]         = details.get("averageRunningCadenceInStepsPerMinute", "")
-                    data["ground_contact"]  = details.get("avgGroundContactTime", "")
-                    data["vertical_osc"]    = round(details.get("avgVerticalOscillation", 0) / 10, 1) or ""
-                    data["vertical_ratio"]  = details.get("avgVerticalRatio", "")
-                    data["stride_length"]   = round(details.get("avgStrideLength", 0) / 100, 2) or ""
-                    data["training_effect"] = details.get("trainingEffect", "")
-                    print(f"  ✓ Hardloop dynamics: cadans {data['cadence']}, GCT {data['ground_contact']}ms")
+                    s = details.get("summaryDTO", {})
+
+                    cad = s.get("averageRunCadence")
+                    gc  = s.get("groundContactTime")
+                    vo  = s.get("verticalOscillation")   # al in cm
+                    vr  = s.get("verticalRatio")
+                    sl  = s.get("strideLength")           # in cm → /100 = m
+                    pw  = s.get("averagePower")
+
+                    data["cadence"]         = round(cad) if cad else ""
+                    data["ground_contact"]  = round(gc)  if gc  else ""
+                    data["vertical_osc"]    = round(vo, 1) if vo else ""
+                    data["vertical_ratio"]  = round(vr, 1) if vr else ""
+                    data["stride_length"]   = round(sl / 100, 2) if sl else ""
+                    data["training_effect"] = s.get("trainingEffectLabel", "")
+                    data["run_power"]       = round(pw) if pw else ""
+
+                    print(f"  ✓ Hardloop dynamics: cadans {data['cadence']} spm, GCT {data['ground_contact']} ms, "
+                          f"V.osc {data['vertical_osc']} cm, vermogen {data['run_power']} W")
                 except Exception as e:
                     print(f"  ⚠ Hardloop dynamics: {e}")
 
@@ -310,16 +322,16 @@ def write_planned_workouts(client):
 HEADERS = [
     "date", "weight", "alcohol", "bp_sys", "bp_dia",          # A–E
     "sleep_h", "sleep_q", "sleep_deep", "sleep_rem",           # F–I
-    "hrv", "hrv_7d", "hrv_5min",                               # J–L  ← nieuw
+    "hrv", "hrv_7d", "hrv_5min",                               # J–L
     "rhr", "stress", "body_battery", "steps",                  # M–P
     "trained", "train_type", "train_min", "train_dist",        # Q–T
     "avg_hr", "max_hr", "avg_pace", "cadence",                 # U–X
     "ground_contact", "vertical_osc", "vertical_ratio",        # Y–AA
-    "stride_length", "training_effect", "vo2max",              # AB–AD
-    "energy", "mental_unrest", "breathing", "breathing_type",  # AE–AH
-    "notes", "sleep_prep", "koffie", "mood",                   # AI–AL
-    "activities",                                               # AM
-    "step_goal",                                               # AN
+    "stride_length", "training_effect", "vo2max", "run_power", # AB–AE
+    "energy", "mental_unrest", "breathing", "breathing_type",  # AF–AI
+    "notes", "sleep_prep", "koffie", "mood",                   # AJ–AM
+    "activities",                                               # AN
+    "step_goal",                                               # AO
 ]
 
 
