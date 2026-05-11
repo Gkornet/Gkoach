@@ -1232,7 +1232,7 @@ export default function App() {
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 6);
     if (runs.length === 0) return;
-    const cacheKey = `run_coaching_${runs[0].date}`;
+    const cacheKey = `run_coaching_${runs[0].date}_${runs[0].cadence || "0"}_${runs[0].ground_contact || "0"}`;
     const cached = localStorage.getItem(cacheKey);
     if (cached) { setRunCoaching(cached); return; }
     setRunCoachLoad(true);
@@ -1977,14 +1977,14 @@ export default function App() {
               .slice(0, 6);
             if (runs.length === 0) return null;
             const latest = runs[0];
-            const metricRow = (label, value, unit, ideal, idealLabel, good) => {
+            const metricRow = (label, value, unit, idealLabel, good) => {
               const color = good === null ? C.text3 : good ? C.green : C.orange;
               return (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: `1px solid ${C.border}` }}>
                   <div style={{ fontSize: 14, color: C.text2 }}>{label}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 15, fontWeight: 600, color }}>{value ? `${value} ${unit}` : "—"}</span>
-                    <span style={{ fontSize: 12, color: C.text3 }}>{idealLabel}</span>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color }}>{value ? `${value} ${unit}` : "—"}</div>
+                    {idealLabel && <div style={{ fontSize: 11, color: C.text3, marginTop: 1 }}>{idealLabel}</div>}
                   </div>
                 </div>
               );
@@ -2009,21 +2009,13 @@ export default function App() {
                   <div style={{ fontSize: 13, color: C.text3, marginBottom: 10 }}>
                     Laatste run: {new Date(latest.date + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "short" })} · {latest.train_dist} km · {latest.avg_pace}/km
                   </div>
-                  {metricRow("Cadans", cad, "spm", 175, "ideaal ≥175  (stap-frequentie)", cad ? cad >= 170 : null)}
-                  {metricRow("Grondcontact", gc, "ms", 270, "ideaal <270  (voet op de grond)", gc ? gc < 270 : null)}
-                  {metricRow("Verticale beweging", vo, "cm", 9, "ideaal <9  (hoeveel je opveert)", vo ? vo < 9 : null)}
-                  {metricRow("Verticale ratio", vr ? vr.toFixed(1) : null, "%", 9, "ideaal <9%  (energie omhoog vs vooruit)", vr ? vr < 9 : null)}
-                  {metricRow("Staplengte", sl, "m", null, "afstand per stap", null)}
-                  {pw ? metricRow("Loopvermogen", pw, "W", null, "vermogen in watt", null) : null}
-                  {te ? (
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
-                      <div style={{ fontSize: 14, color: C.text2 }}>Trainingseffect</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: C.blue }}>{teLabels[te] || te.toLowerCase()}</span>
-                      </div>
-                    </div>
-                  ) : null}
-                  {metricRow("Gem. hartslag", hr, "bpm", null, "zone 2: 130-150", hr ? (hr >= 125 && hr <= 155) : null)}
+                  {metricRow("Cadans", cad, "spm", "ideaal ≥175", cad ? cad >= 170 : null)}
+                  {metricRow("Grondcontact", gc, "ms", "ideaal <270", gc ? gc < 270 : null)}
+                  {metricRow("Verticale beweging", vo, "cm", "ideaal <9", vo ? vo < 9 : null)}
+                  {metricRow("Verticale ratio", vr ? vr.toFixed(1) : null, "%", "ideaal <9%", vr ? vr < 9 : null)}
+                  {metricRow("Staplengte", sl, "m", null, null)}
+                  {pw ? metricRow("Loopvermogen", pw, "W", te ? (teLabels[te] || te.toLowerCase()) : null, null) : null}
+                  {metricRow("Gem. hartslag", hr, "bpm", "zone 2: 130–150", hr ? (hr >= 125 && hr <= 155) : null)}
                 </div>
 
                 {runCoachLoad && (
@@ -2049,11 +2041,12 @@ export default function App() {
                       })}
                       <div style={{ textAlign: "right", marginTop: 4 }}>
                         <button onClick={() => {
-                          const cacheKey = `run_coaching_${runs[0].date}`;
+                          const cacheKey = `run_coaching_${runs[0].date}_${runs[0].cadence || "0"}_${runs[0].ground_contact || "0"}`;
                           localStorage.removeItem(cacheKey);
                           setRunCoaching(""); setRunCoachLoad(true);
+                          const freshKey = `run_coaching_${runs[0].date}_${runs[0].cadence || "0"}_${runs[0].ground_contact || "0"}`;
                           fetchRunCoaching(runs)
-                            .then(r => { if (r) { setRunCoaching(r); localStorage.setItem(cacheKey, r); } })
+                            .then(r => { if (r) { setRunCoaching(r); localStorage.setItem(freshKey, r); } })
                             .catch(() => {}).finally(() => setRunCoachLoad(false));
                         }} style={{ fontSize: 12, color: C.text3, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}>↻ vernieuw</button>
                       </div>
