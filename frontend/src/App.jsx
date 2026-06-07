@@ -1,91 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { createClient } from "@supabase/supabase-js";
 
-// ── Google Sheets API ─────────────────────────────────────────────────────────
-const SHEET_ID   = import.meta.env.VITE_GOOGLE_SHEET_ID;
-const SA_EMAIL   = import.meta.env.VITE_GOOGLE_SERVICE_ACCOUNT_EMAIL;
-const SA_KEY     = import.meta.env.VITE_GOOGLE_PRIVATE_KEY?.replace(/\\n/g, "\n").replace(/\r/g, "");
-const CLAUDE_KEY = import.meta.env.VITE_CLAUDE_API_KEY;
-const TAB        = "coach_data";
-const RANGE      = `${TAB}!A:AN`; // AN = kolom 40 (incl. step_goal), moet overeenkomen met HEADERS.length
-const PLANNED_TAB   = "planned_workouts";
-const PLANNED_RANGE = `${PLANNED_TAB}!A:D`;
+// ── Supabase ─────────────────────────────────────────────────────────────────
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const CLAUDE_KEY        = import.meta.env.VITE_CLAUDE_API_KEY;
 
-const b64url = str => btoa(str).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-const b64urlBytes = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-async function getJWT() {
-  const header  = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
-  const now     = Math.floor(Date.now() / 1000);
-  const payload = b64url(JSON.stringify({
-    iss: SA_EMAIL, scope: "https://www.googleapis.com/auth/spreadsheets",
-    aud: "https://oauth2.googleapis.com/token", exp: now + 3600, iat: now
-  }));
-  const unsigned  = `${header}.${payload}`;
-  const keyData   = SA_KEY.replace(/-----BEGIN( RSA)? PRIVATE KEY-----|-----END( RSA)? PRIVATE KEY-----|\n|\r/g, "").trim();
-  const binaryKey = Uint8Array.from(atob(keyData), c => c.charCodeAt(0));
-  const cryptoKey = await crypto.subtle.importKey(
-    "pkcs8", binaryKey.buffer, { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]
-  );
-  const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", cryptoKey, new TextEncoder().encode(unsigned));
-  const jwt = `${unsigned}.${b64urlBytes(sig)}`;
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${jwt}`
-  });
-  return (await res.json()).access_token;
-}
-
-async function sheetsGet() {
-  const token = await getJWT();
-  const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(RANGE)}`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  return res.json();
-}
-
-async function sheetsGetPlanned() {
-  const token = await getJWT();
-  const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(PLANNED_RANGE)}`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  const d = await res.json();
-  if (!d.values || d.values.length < 2) return [];
-  const hdrs = d.values[0];
-  return d.values.slice(1).map(r => {
-    const obj = {};
-    hdrs.forEach((h, i) => { obj[h] = r[i] ?? ""; });
-    return obj;
-  });
-}
-
-async function sheetsAppend(row) {
-  const token = await getJWT();
-  await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(RANGE)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`,
-    { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ values: [row] }) }
-  );
-}
-
-async function sheetsUpdate(rowIdx, row) {
-  const token = await getJWT();
-  // HEADERS has 36 columns (A–AJ): dynamically compute last column
-  const colNum = row.length; // e.g. 36
-  const lastCol = colNum <= 26
-    ? String.fromCharCode(64 + colNum)
-    : String.fromCharCode(64 + Math.floor((colNum - 1) / 26)) + String.fromCharCode(65 + ((colNum - 1) % 26));
-  const range = `${TAB}!A${rowIdx}:${lastCol}${rowIdx}`;
-  const res = await fetch(
-    `https://sheets.googleapis.com/v4/spreadsheets/${SHEET_ID}/values/${encodeURIComponent(range)}?valueInputOption=USER_ENTERED`,
-    { method: "PUT", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ values: [row] }) }
-  );
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    console.error("sheetsUpdate error:", res.status, err);
-    throw new Error(`Sheets update failed: ${res.status} ${err?.error?.message || ""}`);
-  }
-}
+// Converteer lege strings naar null voor de database
+const cleanForDB = (obj) => Object.fromEntries(
+  Object.entries(obj).map(([k, v]) => [k, v === "" ? null : v])
+);
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 // Kolom A–J: datum t/m hrv, dan K=hrv_7d L=hrv_5min (door gebruiker aangemaakt),
@@ -962,8 +888,70 @@ const Field = ({ label, children }) => (
   </div>
 );
 
+// ── Login ─────────────────────────────────────────────────────────────────────
+function LoginScreen() {
+  const [email,    setEmail]    = useState("");
+  const [password, setPassword] = useState("");
+  const [loading,  setLoading]  = useState(false);
+  const [error,    setError]    = useState("");
+
+  const handleLogin = async () => {
+    if (!email || !password) return;
+    setLoading(true);
+    setError("");
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) setError(error.message === "Invalid login credentials"
+      ? "Onbekend e-mailadres of onjuist wachtwoord"
+      : error.message);
+    setLoading(false);
+  };
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: C.bg,
+      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+      padding: "0 24px", fontFamily: "system-ui, -apple-system, sans-serif",
+    }}>
+      <div style={{ width: "100%", maxWidth: 360 }}>
+        <div style={{ textAlign: "center", marginBottom: 44 }}>
+          <div style={{ fontSize: 52, marginBottom: 10 }}>🏃</div>
+          <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px" }}>Gkoach</div>
+          <div style={{ fontSize: 15, color: C.text3, marginTop: 4 }}>Jouw persoonlijke health coach</div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <input type="email" placeholder="E-mailadres" value={email}
+            onChange={e => setEmail(e.target.value)}
+            autoCapitalize="none" autoCorrect="off"
+            style={{ padding: "14px 16px", fontSize: 16, borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.card, fontFamily: "inherit", outline: "none" }}
+          />
+          <input type="password" placeholder="Wachtwoord" value={password}
+            onChange={e => setPassword(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleLogin()}
+            style={{ padding: "14px 16px", fontSize: 16, borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.card, fontFamily: "inherit", outline: "none" }}
+          />
+          {error && (
+            <div style={{ fontSize: 14, color: C.red, textAlign: "center", padding: "4px 0" }}>{error}</div>
+          )}
+          <button onClick={handleLogin} disabled={loading || !email || !password}
+            style={{
+              padding: "15px", fontSize: 17, fontWeight: 600, borderRadius: 12,
+              background: C.blue, color: "#FFF", border: "none", cursor: "pointer",
+              fontFamily: "inherit", opacity: (!email || !password || loading) ? 0.5 : 1,
+              marginTop: 4,
+            }}>
+            {loading ? "Inloggen..." : "Inloggen"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
+  const [session,     setSession]     = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [entries,   setEntries]   = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [sheetsError, setSheetsError] = useState(null);
@@ -980,9 +968,8 @@ export default function App() {
   const [dailyTipLoad,   setDailyTipLoad]   = useState(false);
   const [question,  setQuestion]  = useState("");
   const [saveMsg,   setSaveMsg]   = useState("");
-  const [sheetMode, setSheetMode] = useState(!!SHEET_ID);
   const [lastRefresh, setLastRefresh] = useState(null);
-  const [ghSyncing,   setGhSyncing]   = useState(false); // GitHub Actions sync bezig
+  const [ghSyncing,   setGhSyncing]   = useState(false);
   const [planDone,    setPlanDone]    = useState({});
   const [taskDetail,  setTaskDetail]  = useState(null);
   const [showExercise, setShowExercise] = useState(false);
@@ -993,55 +980,35 @@ export default function App() {
   const [touchStartX, setTouchStartX] = useState(null);
   const skipPrefillRef = useRef(false);
 
+  // Auth: sessiebeheer via Supabase
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   const loadData = useCallback(async () => {
-    if (!sheetMode) {
-      try {
-        const raw = JSON.parse(localStorage.getItem("coach_v2") || "{}");
-        setEntries(Object.values(raw).sort((a, b) => a.date.localeCompare(b.date)));
-      } catch {}
-      setLoading(false);
-      setLastRefresh(new Date());
-      return;
-    }
     try {
-      const [res, plannedData] = await Promise.all([sheetsGet(), sheetsGetPlanned().catch(() => [])]);
-      console.log("[loadData] API response:", JSON.stringify(res).slice(0, 300));
-      const rows = res.values || [];
-      console.log("[loadData] rows.length:", rows.length, "| header row:", rows[0]?.slice(0,5));
-      if (res.error) {
-        const msg = `Sheets API fout ${res.error.code}: ${res.error.message}`;
-        console.error("[loadData]", msg);
-        setSheetsError(msg);
-      } else {
-        setSheetsError(null);
-      }
-      if (rows.length >= 2) {
-        // Gebruik UITSLUITEND de werkelijke sheet-headers (rij 1) voor kolom-mapping.
-        // Geen positie-based fallback — die geeft foute waarden als kolommen zijn
-        // ingevoegd of de volgorde in de sheet afwijkt van HEADERS.
-        const sheetHeaders = rows[0].map(h => String(h).trim().toLowerCase());
-        const data = rows.slice(1).map(r => {
-          const obj = {};
-          sheetHeaders.forEach((h, i) => {
-            if (h) obj[h] = r[i] ?? "";
-          });
-          return obj;
-        }).filter(e => e.date).sort((a, b) => a.date.localeCompare(b.date));
-        console.log("[loadData] entries loaded:", data.length, "| first:", data[0]?.date, "| last:", data[data.length-1]?.date);
-        setEntries(data);
-      } else {
-        console.warn("[loadData] Niet genoeg rijen in sheet (rows.length=" + rows.length + ")");
-      }
-      setPlanned(plannedData);
+      const [{ data: entriesData, error: e1 }, { data: plannedData, error: e2 }] = await Promise.all([
+        supabase.from("health_entries").select("*").order("date", { ascending: true }),
+        supabase.from("planned_workouts").select("*").gte("date", today()).order("date", { ascending: true }),
+      ]);
+      setSheetsError(e1?.message || null);
+      setEntries(entriesData || []);
+      setPlanned(plannedData || []);
       setLastRefresh(new Date());
     } catch (e) {
-      console.error("[loadData] Sheets load error:", e);
-      // Niet terugvallen op lokale modus — blijf sheets gebruiken bij volgende refresh
+      console.error("[loadData]", e);
     }
     setLoading(false);
-  }, [sheetMode]);
+  }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => { if (session) loadData(); }, [loadData, session]);
 
   // Triggert de GitHub Actions garmin_sync workflow via Vercel API-route
   // + herlaadt altijd meteen de data uit de sheet
@@ -1099,24 +1066,16 @@ export default function App() {
 
   const saveEntry = async () => {
     setSyncing(true);
-    const savedEntry = { ...entry }; // snapshot vóór async
-    const row = HEADERS.map(h => entry[h] ?? "");
+    const savedEntry = { ...entry };
     try {
-      if (sheetMode) {
-        const res    = await sheetsGet();
-        const rows   = res.values || [];
-        const dates  = rows.slice(1).map(r => r[0]);
-        const rowIdx = dates.indexOf(entry.date);
-        if (rowIdx >= 0) await sheetsUpdate(rowIdx + 2, row);
-        else await sheetsAppend(row);
-      } else {
-        const raw = JSON.parse(localStorage.getItem("coach_v2") || "{}");
-        raw[entry.date] = entry;
-        localStorage.setItem("coach_v2", JSON.stringify(raw));
-      }
-      skipPrefillRef.current = true; // voorkom dat prefill form overschrijft na loadData
+      const { error } = await supabase.from("health_entries").upsert(
+        cleanForDB({ ...entry, user_id: session.user.id }),
+        { onConflict: "user_id,date" }
+      );
+      if (error) throw error;
+      skipPrefillRef.current = true;
       await loadData();
-      setEntry(savedEntry); // herstel opgeslagen waarden (sheet kan iets achter zijn)
+      setEntry(savedEntry);
       setSaveMsg("Opgeslagen!");
     } catch {
       setSaveMsg("Fout bij opslaan");
@@ -1125,26 +1084,17 @@ export default function App() {
     setTimeout(() => setSaveMsg(""), 2500);
   };
 
-  // Auto-save a single field for the viewed date (used by plan item toggles)
   const autoSaveField = async (key, value, targetDate) => {
     const date = targetDate || today();
     const base = entries.find(e => e.date === date) || { ...EMPTY, date };
     const updated = { ...base, [key]: value };
     if (entry.date === date) setEntry(updated);
-    const row = HEADERS.map(h => updated[h] ?? "");
     try {
-      if (sheetMode) {
-        const res   = await sheetsGet();
-        const rows  = res.values || [];
-        const dates = rows.slice(1).map(r => r[0]);
-        const idx   = dates.indexOf(date);
-        if (idx >= 0) await sheetsUpdate(idx + 2, row);
-        else await sheetsAppend(row);
-      } else {
-        const raw = JSON.parse(localStorage.getItem("coach_v2") || "{}");
-        raw[date] = updated;
-        localStorage.setItem("coach_v2", JSON.stringify(raw));
-      }
+      const { error } = await supabase.from("health_entries").upsert(
+        cleanForDB({ ...updated, user_id: session.user.id }),
+        { onConflict: "user_id,date" }
+      );
+      if (error) throw error;
       await loadData();
     } catch (e) { console.error("autoSave error:", e); }
   };
@@ -1262,6 +1212,9 @@ export default function App() {
     { id: "trends",   icon: "chart",    label: "Trends"   },
     { id: "setup",    icon: "gear",     label: "Meer"     },
   ];
+
+  if (authLoading) return null;
+  if (!session) return <LoginScreen />;
 
   if (loading) return (
     <div style={{ background: C.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "system-ui" }}>
@@ -1952,11 +1905,6 @@ export default function App() {
               );
             })()}
 
-            {!sheetMode && (
-              <div style={{ background: C.orange + "15", borderRadius: 12, padding: "12px 16px", fontSize: 13, color: C.orange }}>
-                Lokale modus — configureer Google Sheets via Meer → Instellingen.
-              </div>
-            )}
           </div>
         </div>
       )}
@@ -2618,10 +2566,14 @@ export default function App() {
           <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 24 }}>
             <div style={{ background: C.card, borderRadius: "14px 14px 4px 4px", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <span style={{ fontSize: 16 }}>{entries.length} dagen data</span>
-              <span style={{ color: C.text3, fontSize: 14 }}>{sheetMode ? "Google Sheets" : "lokaal"}</span>
+              <span style={{ color: C.text3, fontSize: 14 }}>Supabase</span>
             </div>
-            <div onClick={loadData} style={{ background: C.card, borderRadius: "4px 4px 14px 14px", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+            <div onClick={loadData} style={{ background: C.card, borderRadius: "4px", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
               <span style={{ fontSize: 16, color: C.blue }}>Vernieuwen</span>
+            </div>
+            <div onClick={async () => { await supabase.auth.signOut(); }} style={{ background: C.card, borderRadius: "4px 4px 14px 14px", padding: "12px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+              <span style={{ fontSize: 16, color: C.red }}>Uitloggen</span>
+              <span style={{ fontSize: 13, color: C.text3 }}>{session?.user?.email}</span>
             </div>
           </div>
 
@@ -2646,10 +2598,11 @@ export default function App() {
           <div style={{ fontSize: 17, fontWeight: 600, margin: "24px 0 10px" }}>Verbindingen</div>
           <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 8 }}>
             {[
-              { label: "Google Sheets", ok: !!SHEET_ID,   detail: SHEET_ID ? `Sheet ...${SHEET_ID.slice(-6)}` : "Niet ingesteld" },
-              { label: "Claude AI",     ok: !!CLAUDE_KEY, detail: CLAUDE_KEY ? "API key aanwezig" : "Niet ingesteld" },
-              { label: "Garmin sync",   ok: false,        detail: "06:30 dagelijks via GitHub Actions" },
+              { label: "Supabase",    ok: !!SUPABASE_URL,  detail: session?.user?.email || "Niet ingelogd" },
+              { label: "Claude AI",   ok: !!CLAUDE_KEY,  detail: CLAUDE_KEY ? "API key aanwezig" : "Niet ingesteld" },
+              { label: "Garmin sync", ok: false,          detail: "06:30 dagelijks via GitHub Actions" },
             ].map((s, i, arr) => (
+
               <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 12, paddingBottom: i<arr.length-1?14:0, marginBottom: i<arr.length-1?14:0, borderBottom: i<arr.length-1?`1px solid ${C.border}`:0 }}>
                 <div style={{ width: 10, height: 10, borderRadius: "50%", background: s.ok ? C.green : C.text3, flexShrink: 0 }} />
                 <div>

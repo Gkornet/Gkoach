@@ -18,12 +18,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # ── Config ────────────────────────────────────────────────────────────────────
-GARMIN_EMAIL    = os.getenv("GARMIN_EMAIL")
-GARMIN_PASSWORD = os.getenv("GARMIN_PASSWORD")
-SHEET_ID        = os.getenv("GOOGLE_SHEET_ID")
-SERVICE_ACCOUNT = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")  # pad naar JSON file
-SHEET_TAB       = os.getenv("SHEET_TAB_NAME", "coach_data")
-TOKEN_STORE     = os.path.join(os.path.dirname(__file__), ".garmin_tokens")
+GARMIN_EMAIL         = os.getenv("GARMIN_EMAIL")
+GARMIN_PASSWORD      = os.getenv("GARMIN_PASSWORD")
+SUPABASE_URL         = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+GARMIN_USER_ID       = os.getenv("GARMIN_USER_ID")
+TOKEN_STORE          = os.path.join(os.path.dirname(__file__), ".garmin_tokens")
 
 TODAY = datetime.date.today().isoformat()
 
@@ -196,86 +196,45 @@ def get_garmin_data():
     return client, data
 
 
-# ── Google Sheets schrijven ───────────────────────────────────────────────────
-def write_to_sheet(garmin_data):
-    import gspread
-    from google.oauth2.service_account import Credentials
+# ── Supabase schrijven ────────────────────────────────────────────────────────
+def write_to_supabase(garmin_data):
+    from supabase import create_client
 
-    print(f"\nVerbinden met Google Sheets...")
+    print(f"\nVerbinden met Supabase...")
+    sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT, scopes=scopes)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(SHEET_ID)
+    # Bouw het record op — sla lege/None waarden over
+    record = {k: v for k, v in garmin_data.items() if v not in ("", None)}
 
-    try:
-        ws = sh.worksheet(SHEET_TAB)
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title=SHEET_TAB, rows=1000, cols=50)
-        ws.append_row(HEADERS)
-        print(f"  ✓ Nieuw tabblad '{SHEET_TAB}' aangemaakt met headers")
+    # Haal eventuele bestaande rij op zodat we user-data (gewicht, alcohol, bp) niet overschrijven
+    existing = sb.table("health_entries").select("*").eq("user_id", GARMIN_USER_ID).eq("date", TODAY).execute()
 
-    # Zorg dat de header-rij (rij 1) altijd overeenkomt met de huidige HEADERS definitie.
-    # Dit herstelt kolom-namen die door eerder (de)synchronisatie verschoven of hernoemd zijn.
-    import gspread as _gs
-    major = int(_gs.__version__.split(".")[0])
-    current_headers = ws.row_values(1)
-    if current_headers[:len(HEADERS)] != HEADERS:
-        if major >= 6:
-            ws.update([HEADERS], "A1")
-        else:
-            ws.update("A1", [HEADERS])
-        print(f"  ✓ Header-rij bijgewerkt naar actuele HEADERS ({len(HEADERS)} kolommen)")
+    if existing.data:
+        # UPDATE: alleen de Garmin-velden bijwerken, user-ingevulde velden ongemoeid laten
+        sb.table("health_entries").update(record).eq("user_id", GARMIN_USER_ID).eq("date", TODAY).execute()
+        print(f"  ✓ Bestaande rij bijgewerkt voor {TODAY} ({len(record)} velden)")
     else:
-        print(f"  ✓ Header-rij al correct")
-
-    all_dates = ws.col_values(1)
-
-    if TODAY in all_dates:
-        row_idx = all_dates.index(TODAY) + 1
-        print(f"  → Rij {row_idx} bijwerken (datum {TODAY} bestaat al)")
-        existing = ws.row_values(row_idx)
-        existing = existing + [""] * (len(HEADERS) - len(existing))
-        row = dict(zip(HEADERS, existing))
-        row.update({k: v for k, v in garmin_data.items()})
-        row["date"] = TODAY
-        if major >= 6:
-            result = ws.update([list(row.values())], f"A{row_idx}")
-        else:
-            result = ws.update(f"A{row_idx}", [list(row.values())])
-        print(f"  ✓ Rij {row_idx} bijgewerkt (result={result})")
-    else:
-        row = {h: "" for h in HEADERS}
-        row.update(garmin_data)
-        row["date"] = TODAY
-        print(f"  DEBUG: appending row, date={row['date']}, fields met data={[k for k,v in row.items() if v not in ('', None, False)]}")
-        result = ws.append_row(list(row.values()), value_input_option="USER_ENTERED", table_range="A1")
-        print(f"  ✓ Nieuwe rij toegevoegd voor {TODAY} (result={result})")
-
-    print("  ✓ Google Sheets bijgewerkt")
+        # INSERT: nieuwe rij voor vandaag
+        record["user_id"] = GARMIN_USER_ID
+        record["date"]    = TODAY
+        sb.table("health_entries").insert(record).execute()
+        print(f"  ✓ Nieuwe rij toegevoegd voor {TODAY} ({len(record)} velden)")
 
 
 # ── Geplande workouts schrijven ───────────────────────────────────────────────
-PLANNED_TAB = "planned_workouts"
-PLANNED_HEADERS = ["date", "title", "sport", "workout_id"]
-
-def write_planned_workouts(client):
-    import gspread
-    from google.oauth2.service_account import Credentials
+def write_planned_workouts(garmin_client):
+    from supabase import create_client
 
     print(f"\nGeplande workouts ophalen...")
-
-    # Haal komende 2 maanden op
     today_obj = datetime.date.today()
+
+    # Haal komende 2 maanden op via Garmin
     items = []
     for delta in range(2):
-        year = (today_obj.replace(day=1) + datetime.timedelta(days=32 * delta)).year
+        year  = (today_obj.replace(day=1) + datetime.timedelta(days=32 * delta)).year
         month = (today_obj.replace(day=1) + datetime.timedelta(days=32 * delta)).month
         try:
-            cal = client.get_scheduled_workouts(year, month)
+            cal = garmin_client.get_scheduled_workouts(year, month)
             for item in cal.get("calendarItems", []):
                 if item.get("itemType") == "workout" and item.get("date", "") >= today_obj.isoformat():
                     items.append({
@@ -287,11 +246,9 @@ def write_planned_workouts(client):
         except Exception as e:
             print(f"  ⚠ Kalender maand {month}: {e}")
 
-    items.sort(key=lambda x: x["date"])
-    # Dedupliceer op workout_id (Garmin kan zelfde workout in beide maanden retourneren)
-    seen_ids = set()
-    unique_items = []
-    for item in items:
+    # Dedupliceer op workout_id
+    seen_ids, unique_items = set(), []
+    for item in sorted(items, key=lambda x: x["date"]):
         key = item["workout_id"] or f"{item['date']}_{item['title']}"
         if key not in seen_ids:
             seen_ids.add(key)
@@ -299,21 +256,17 @@ def write_planned_workouts(client):
     items = unique_items
     print(f"  ✓ {len(items)} geplande workouts gevonden")
 
-    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-    creds = Credentials.from_service_account_file(SERVICE_ACCOUNT, scopes=scopes)
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(SHEET_ID)
+    # Schrijf naar Supabase: verwijder toekomstige workouts en zet nieuwe neer
+    sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    sb.table("planned_workouts").delete().eq("user_id", GARMIN_USER_ID).gte("date", TODAY).execute()
 
-    try:
-        ws = sh.worksheet(PLANNED_TAB)
-        ws.clear()
-    except gspread.WorksheetNotFound:
-        ws = sh.add_worksheet(title=PLANNED_TAB, rows=200, cols=10)
-
-    ws.append_row(PLANNED_HEADERS, table_range="A1")
     for item in items:
-        ws.append_row([item[h] for h in PLANNED_HEADERS], table_range="A1")
-    print(f"  ✓ planned_workouts tab bijgewerkt ({len(items)} rijen)")
+        sb.table("planned_workouts").upsert(
+            {"user_id": GARMIN_USER_ID, **item},
+            on_conflict="user_id,date"
+        ).execute()
+
+    print(f"  ✓ planned_workouts bijgewerkt in Supabase ({len(items)} rijen)")
 
 
 # ── Headers (moeten overeenkomen met de app én de Google Sheet kolomvolgorde) ──
@@ -345,8 +298,8 @@ if __name__ == "__main__":
         print("FOUT: Stel GARMIN_EMAIL en GARMIN_PASSWORD in in je .env bestand")
         sys.exit(1)
 
-    if not SHEET_ID or not SERVICE_ACCOUNT:
-        print("FOUT: Stel GOOGLE_SHEET_ID en GOOGLE_SERVICE_ACCOUNT_JSON in in je .env bestand")
+    if not SUPABASE_URL or not SUPABASE_SERVICE_KEY or not GARMIN_USER_ID:
+        print("FOUT: Stel SUPABASE_URL, SUPABASE_SERVICE_KEY en GARMIN_USER_ID in in je .env bestand")
         sys.exit(1)
 
     # Stap 1: Garmin data ophalen (niet fataal als dit mislukt)
@@ -363,13 +316,13 @@ if __name__ == "__main__":
         traceback.print_exc()
         print("  → Ga door met lege Garmin data (rij voor vandaag wordt toch aangemaakt)")
 
-    # Stap 2: Altijd naar Sheets schrijven (zelfs als Garmin leeg is)
+    # Stap 2: Altijd naar Supabase schrijven (zelfs als Garmin leeg is)
     try:
-        write_to_sheet(garmin_data)
-        print(f"✅ Sheets bijgewerkt voor {TODAY}")
+        write_to_supabase(garmin_data)
+        print(f"✅ Supabase bijgewerkt voor {TODAY}")
     except Exception as e:
         import traceback
-        print(f"\n❌ Sheets schrijven mislukt: {e}")
+        print(f"\n❌ Supabase schrijven mislukt: {e}")
         traceback.print_exc()
         sys.exit(1)
 
