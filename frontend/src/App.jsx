@@ -2300,6 +2300,24 @@ export default function App() {
             body: `Gemiddeld ${b7a.toFixed(0)}% deze week vs ${bPa.toFixed(0)}% vorige week.` });
         }
 
+        // 7. Alcohol week-over-week
+        const alcThisWeek = last7.map(e => parseNum(e.alcohol) || 0).reduce((a,b) => a+b, 0);
+        const alcPrevWeek = prev7.map(e => parseNum(e.alcohol) || 0).reduce((a,b) => a+b, 0);
+        if (entries.some(e => parseNum(e.alcohol) > 0)) {
+          if (alcThisWeek === 0) {
+            insights.push({ icon: "🍷", color: C.green,
+              title: "Geen alcohol afgelopen week",
+              body: "0 glazen de afgelopen 7 dagen." });
+          } else {
+            const diff = alcThisWeek - alcPrevWeek;
+            insights.push({ icon: "🍷", color: alcThisWeek <= 7 ? C.orange : C.red,
+              title: `${alcThisWeek} glazen afgelopen week`,
+              body: prev7.length > 0 && diff !== 0
+                ? `${diff > 0 ? "+" : ""}${diff} glazen vs vorige week (${alcPrevWeek} glazen).`
+                : `${alcThisWeek} glazen in de afgelopen 7 dagen.` });
+          }
+        }
+
         // Week-over-week tiles
         const wkTiles = [
           { l: "HRV",      f: "hrv",          u: "ms", c: C.green,  good:"up"   },
@@ -2482,6 +2500,105 @@ export default function App() {
                       </div>
                       <div style={{ fontSize:12, color:C.text3, marginBottom:10 }}>gem. {avg(rVals)} · {rVals.length} berekeningen</div>
                       <Sparkline data={rVals} color={C.blue} height={44} fill />
+                    </div>
+                  );
+                })()}
+
+                {/* Alcohol */}
+                {(() => {
+                  const todayStr = today();
+                  const todayDate = new Date(todayStr + "T12:00:00");
+                  const thisYear = todayDate.getFullYear();
+                  const lastYear = thisYear - 1;
+                  const ds = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+
+                  if (!entries.some(e => parseNum(e.alcohol) > 0)) return null;
+
+                  // Dag: vandaag
+                  const todayAlcohol = parseNum(entries.find(e => e.date === todayStr)?.alcohol) || 0;
+                  const lyTodayStr = `${lastYear}-${todayStr.slice(5)}`;
+                  const lyTodayEntry = entries.find(e => e.date === lyTodayStr);
+                  const lyDayAlcohol = lyTodayEntry != null ? (parseNum(lyTodayEntry.alcohol) || 0) : null;
+
+                  // Week: maandag t/m vandaag
+                  const dow = todayDate.getDay();
+                  const daysFromMon = dow === 0 ? 6 : dow - 1;
+                  const monDate = new Date(todayDate);
+                  monDate.setDate(todayDate.getDate() - daysFromMon);
+                  const monStr = ds(monDate);
+                  const thisWeekAlcohol = entries
+                    .filter(e => e.date >= monStr && e.date <= todayStr)
+                    .reduce((s, e) => s + (parseNum(e.alcohol) || 0), 0);
+                  const lyMonStr = `${lastYear}-${monStr.slice(5)}`;
+                  const lyTodayWkStr = `${lastYear}-${todayStr.slice(5)}`;
+                  const lyWeekEntries = entries.filter(e => e.date >= lyMonStr && e.date <= lyTodayWkStr);
+                  const lyWeekAlcohol = lyWeekEntries.length > 0
+                    ? lyWeekEntries.reduce((s, e) => s + (parseNum(e.alcohol) || 0), 0)
+                    : null;
+
+                  // Maand: 1e t/m vandaag
+                  const monthStart = `${thisYear}-${String(todayDate.getMonth()+1).padStart(2,"0")}-01`;
+                  const thisMonthAlcohol = entries
+                    .filter(e => e.date >= monthStart && e.date <= todayStr)
+                    .reduce((s, e) => s + (parseNum(e.alcohol) || 0), 0);
+                  const lyMonthStart = `${lastYear}-${monthStart.slice(5)}`;
+                  const lyMonthEnd = `${lastYear}-${todayStr.slice(5)}`;
+                  const lyMonthEntries = entries.filter(e => e.date >= lyMonthStart && e.date <= lyMonthEnd);
+                  const lyMonthAlcohol = lyMonthEntries.length > 0
+                    ? lyMonthEntries.reduce((s, e) => s + (parseNum(e.alcohol) || 0), 0)
+                    : null;
+
+                  // Sparkline: glazen per week, laatste 12 weken
+                  const wkAlcohol = Array.from({length: 12}, (_, i) => {
+                    const wEnd = new Date(todayDate);
+                    wEnd.setDate(todayDate.getDate() - i * 7);
+                    const wStart = new Date(wEnd);
+                    wStart.setDate(wEnd.getDate() - 6);
+                    return entries.filter(e => e.date >= ds(wStart) && e.date <= ds(wEnd))
+                      .reduce((s, e) => s + (parseNum(e.alcohol) || 0), 0);
+                  }).reverse();
+
+                  const alcTiles = [
+                    { label: "Vandaag", val: todayAlcohol, ly: lyDayAlcohol },
+                    { label: `Week (ma–nu)`, val: thisWeekAlcohol, ly: lyWeekAlcohol },
+                    { label: `Maand (1–${todayDate.getDate()})`, val: thisMonthAlcohol, ly: lyMonthAlcohol },
+                  ];
+
+                  return (
+                    <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 14 }}>Alcohol</div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 16 }}>
+                        {alcTiles.map(t => {
+                          const diff = t.ly != null ? t.val - t.ly : null;
+                          const diffColor = diff == null ? C.text3 : diff > 0 ? C.red : diff < 0 ? C.green : C.text3;
+                          return (
+                            <div key={t.label} style={{ textAlign: "center" }}>
+                              <div style={{ fontSize: 11, color: C.text3, marginBottom: 4, lineHeight: 1.4 }}>{t.label}</div>
+                              <div style={{ fontSize: 22, fontWeight: 700 }}>
+                                {t.val}<span style={{ fontSize: 11, color: C.text3, fontWeight: 400 }}> gl</span>
+                              </div>
+                              {diff != null ? (
+                                <div style={{ fontSize: 11, color: diffColor, marginTop: 2, fontWeight: 500 }}>
+                                  {diff > 0 ? "+" : diff < 0 ? "" : "="}{diff !== 0 ? diff : ""} vs {lastYear}
+                                </div>
+                              ) : (
+                                <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>geen {lastYear}</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {wkAlcohol.some(v => v > 0) && (
+                        <>
+                          <div style={{ fontSize: 12, color: C.text3, marginBottom: 6 }}>Glazen per week — 12 weken</div>
+                          <Sparkline data={wkAlcohol} color={C.red} height={44} fill />
+                          <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:C.text3, marginTop:4 }}>
+                            <span>min {Math.min(...wkAlcohol)}</span>
+                            <span>gem. {(wkAlcohol.reduce((a,b)=>a+b,0)/12).toFixed(1)}/week</span>
+                            <span>max {Math.max(...wkAlcohol)}</span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   );
                 })()}
