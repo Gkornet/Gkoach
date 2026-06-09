@@ -890,19 +890,21 @@ const Field = ({ label, children }) => (
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 function LoginScreen() {
-  const [email,    setEmail]    = useState("");
-  const [password, setPassword] = useState("");
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState("");
+  const [email,   setEmail]   = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState("");
+  const [sent,    setSent]    = useState(false);
 
-  const handleLogin = async () => {
-    if (!email || !password) return;
+  const handleSendLink = async () => {
+    if (!email) return;
     setLoading(true);
     setError("");
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setError(error.message === "Invalid login credentials"
-      ? "Onbekend e-mailadres of onjuist wachtwoord"
-      : error.message);
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin },
+    });
+    if (error) setError(error.message);
+    else setSent(true);
     setLoading(false);
   };
 
@@ -919,30 +921,48 @@ function LoginScreen() {
           <div style={{ fontSize: 15, color: C.text3, marginTop: 4 }}>Jouw persoonlijke health coach</div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <input type="email" placeholder="E-mailadres" value={email}
-            onChange={e => setEmail(e.target.value)}
-            autoCapitalize="none" autoCorrect="off"
-            style={{ padding: "14px 16px", fontSize: 16, borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.card, fontFamily: "inherit", outline: "none" }}
-          />
-          <input type="password" placeholder="Wachtwoord" value={password}
-            onChange={e => setPassword(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && handleLogin()}
-            style={{ padding: "14px 16px", fontSize: 16, borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.card, fontFamily: "inherit", outline: "none" }}
-          />
-          {error && (
-            <div style={{ fontSize: 14, color: C.red, textAlign: "center", padding: "4px 0" }}>{error}</div>
-          )}
-          <button onClick={handleLogin} disabled={loading || !email || !password}
-            style={{
-              padding: "15px", fontSize: 17, fontWeight: 600, borderRadius: 12,
-              background: C.blue, color: "#FFF", border: "none", cursor: "pointer",
-              fontFamily: "inherit", opacity: (!email || !password || loading) ? 0.5 : 1,
-              marginTop: 4,
-            }}>
-            {loading ? "Inloggen..." : "Inloggen"}
-          </button>
-        </div>
+        {sent ? (
+          <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ fontSize: 40 }}>📬</div>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>Check je e-mail</div>
+            <div style={{ fontSize: 14, color: C.text3, lineHeight: 1.5 }}>
+              We hebben een inloglink gestuurd naar<br /><strong>{email}</strong>.<br />
+              Open de link op dit apparaat om in te loggen.
+            </div>
+            <button onClick={() => { setSent(false); setError(""); }}
+              style={{
+                padding: "12px", fontSize: 15, fontWeight: 500, borderRadius: 12,
+                background: "transparent", color: C.blue, border: `1.5px solid ${C.border}`,
+                cursor: "pointer", fontFamily: "inherit", marginTop: 4,
+              }}>
+              Ander e-mailadres gebruiken
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <input type="email" placeholder="E-mailadres" value={email}
+              onChange={e => setEmail(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSendLink()}
+              autoCapitalize="none" autoCorrect="off"
+              style={{ padding: "14px 16px", fontSize: 16, borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.card, fontFamily: "inherit", outline: "none" }}
+            />
+            {error && (
+              <div style={{ fontSize: 14, color: C.red, textAlign: "center", padding: "4px 0" }}>{error}</div>
+            )}
+            <button onClick={handleSendLink} disabled={loading || !email}
+              style={{
+                padding: "15px", fontSize: 17, fontWeight: 600, borderRadius: 12,
+                background: C.blue, color: "#FFF", border: "none", cursor: "pointer",
+                fontFamily: "inherit", opacity: (!email || loading) ? 0.5 : 1,
+                marginTop: 4,
+              }}>
+              {loading ? "Versturen..." : "Stuur inloglink"}
+            </button>
+            <div style={{ fontSize: 13, color: C.text3, textAlign: "center", marginTop: 2 }}>
+              Geen wachtwoord nodig — je krijgt een inloglink per e-mail.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
