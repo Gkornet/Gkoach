@@ -1,0 +1,43 @@
+# .github/workflows/migrate_to_supabase.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Eenmalige migratie: kopieert coach_data + dataset uit Google Sheets naar
+# Supabase. Handmatig starten via Actions → "Eenmalige Supabase-migratie".
+# Mag verwijderd worden zodra de migratie geslaagd is.
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Eenmalige Supabase-migratie
+
+on:
+  workflow_dispatch:   # Alleen handmatig
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TZ: Europe/Amsterdam
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Python instellen
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Dependencies installeren
+        run: pip install -r backend/requirements.txt
+
+      - name: Migratie uitvoeren
+        env:
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ./service_account.json
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GARMIN_USER_ID: ${{ secrets.GARMIN_USER_ID }}
+        run: |
+          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_CONTENT }}' > backend/service_account.json
+          cd backend
+          python migrate_to_supabase.py
