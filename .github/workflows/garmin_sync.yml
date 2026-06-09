@@ -10,6 +10,11 @@ on:
   schedule:
     - cron: '0 * * * *'   # elk uur
   workflow_dispatch:  # Handmatig triggeren via GitHub UI of API
+    inputs:
+      date:
+        description: 'Datum om te syncen (YYYY-MM-DD). Leeg = vandaag.'
+        required: false
+        default: ''
 
 jobs:
   sync:
@@ -56,6 +61,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           GARMIN_USER_ID: ${{ secrets.GARMIN_USER_ID }}
+          SYNC_DATE: ${{ github.event.inputs.date }}
         run: |
           cd backend
           python garmin_sync.py

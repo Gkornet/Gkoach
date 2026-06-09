@@ -25,7 +25,9 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 GARMIN_USER_ID       = os.getenv("GARMIN_USER_ID")
 TOKEN_STORE          = os.path.join(os.path.dirname(__file__), ".garmin_tokens")
 
-TODAY = datetime.date.today().isoformat()
+# Datum om te syncen — standaard vandaag, of override via SYNC_DATE (YYYY-MM-DD)
+# zodat we een gemiste dag handmatig kunnen ophalen.
+TODAY = os.getenv("SYNC_DATE") or datetime.date.today().isoformat()
 
 # ── Garmin ophalen ────────────────────────────────────────────────────────────
 def get_garmin_data():
@@ -106,7 +108,7 @@ def get_garmin_data():
     # Activiteiten — alle activiteiten van vandaag + hardloop dynamics voor primaire
     WALKING_TYPES = {"walking", "casual_walking"}
     try:
-        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+        yesterday = (datetime.date.fromisoformat(TODAY) - datetime.timedelta(days=1)).isoformat()
         all_fetched = client.get_activities_by_date(yesterday, TODAY)
 
         # Filter op alleen activiteiten van vandaag

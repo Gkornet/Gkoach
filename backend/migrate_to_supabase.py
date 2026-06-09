@@ -52,14 +52,14 @@ def parse_value(field, raw):
     if field in TEXT_FIELDS:
         return raw
 
-    # Numeriek
+    # Numeriek — een niet-numerieke waarde hoort nooit in een getalskolom
     try:
         val = float(raw.replace(",", "."))
-        if field in INT_FIELDS:
-            return int(round(val))
-        return val
     except ValueError:
-        return raw  # onbekend type, bewaar als tekst
+        return None
+    if field in INT_FIELDS:
+        return int(round(val))
+    return val
 
 
 def normalize_date(raw):
@@ -160,6 +160,23 @@ def run():
     all_records = sorted(records.values(), key=lambda r: r["date"])
     print(f"\nUpserten van {len(all_records)} rijen naar Supabase...")
 
+    def upsert_batch(batch):
+        """Upsert een batch; valt terug op rij-voor-rij als de batch faalt,
+        zodat één foute rij de rest niet meesleept."""
+        try:
+            sb.table("health_entries").upsert(batch, on_conflict="user_id,date").execute()
+            return len(batch), 0
+        except Exception:
+            ok = err = 0
+            for rec in batch:
+                try:
+                    sb.table("health_entries").upsert(rec, on_conflict="user_id,date").execute()
+                    ok += 1
+                except Exception as e:
+                    err += 1
+                    print(f"  ✗ Rij {rec.get('date')} mislukt: {e}")
+            return ok, err
+
     ok     = 0
     errors = 0
     batch  = []
@@ -167,22 +184,14 @@ def run():
     for rec in all_records:
         batch.append(rec)
         if len(batch) >= 50:
-            try:
-                sb.table("health_entries").upsert(batch, on_conflict="user_id,date").execute()
-                ok += len(batch)
-                print(f"  → {ok}/{len(all_records)} gereed...")
-            except Exception as e:
-                print(f"  ✗ Batch fout: {e}")
-                errors += len(batch)
+            b_ok, b_err = upsert_batch(batch)
+            ok += b_ok; errors += b_err
+            print(f"  → {ok}/{len(all_records)} gereed...")
             batch = []
 
     if batch:
-        try:
-            sb.table("health_entries").upsert(batch, on_conflict="user_id,date").execute()
-            ok += len(batch)
-        except Exception as e:
-            print(f"  ✗ Laatste batch fout: {e}")
-            errors += len(batch)
+        b_ok, b_err = upsert_batch(batch)
+        ok += b_ok; errors += b_err
 
     print(f"\n✅ Migratie klaar: {ok} rijen OK, {errors} fouten")
     print(f"   Periode: {all_records[0]['date']} t/m {all_records[-1]['date']}")
