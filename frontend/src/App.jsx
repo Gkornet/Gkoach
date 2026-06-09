@@ -891,11 +891,12 @@ const Field = ({ label, children }) => (
 // ── Login ─────────────────────────────────────────────────────────────────────
 function LoginScreen() {
   const [email,   setEmail]   = useState("");
+  const [code,    setCode]    = useState("");
   const [loading, setLoading] = useState(false);
   const [error,   setError]   = useState("");
   const [sent,    setSent]    = useState(false);
 
-  const handleSendLink = async () => {
+  const handleSendCode = async () => {
     if (!email) return;
     setLoading(true);
     setError("");
@@ -905,6 +906,21 @@ function LoginScreen() {
     });
     if (error) setError(error.message);
     else setSent(true);
+    setLoading(false);
+  };
+
+  const handleVerify = async () => {
+    if (!code) return;
+    setLoading(true);
+    setError("");
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: code.trim(),
+      type: "email",
+    });
+    if (error) setError(error.message === "Token has expired or is invalid"
+      ? "Code is ongeldig of verlopen — vraag een nieuwe aan"
+      : error.message);
     setLoading(false);
   };
 
@@ -922,44 +938,63 @@ function LoginScreen() {
         </div>
 
         {sent ? (
-          <div style={{ textAlign: "center", display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ fontSize: 40 }}>📬</div>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>Check je e-mail</div>
-            <div style={{ fontSize: 14, color: C.text3, lineHeight: 1.5 }}>
-              We hebben een inloglink gestuurd naar<br /><strong>{email}</strong>.<br />
-              Open de link op dit apparaat om in te loggen.
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ textAlign: "center", marginBottom: 4 }}>
+              <div style={{ fontSize: 40, marginBottom: 8 }}>📬</div>
+              <div style={{ fontSize: 16, fontWeight: 600 }}>Voer de code in</div>
+              <div style={{ fontSize: 14, color: C.text3, lineHeight: 1.5, marginTop: 6 }}>
+                We mailden een 6-cijferige code naar<br /><strong>{email}</strong>.
+              </div>
             </div>
-            <button onClick={() => { setSent(false); setError(""); }}
+            <input type="text" inputMode="numeric" autoComplete="one-time-code"
+              placeholder="123456" value={code}
+              onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onKeyDown={e => e.key === "Enter" && handleVerify()}
+              style={{ padding: "14px 16px", fontSize: 22, letterSpacing: "6px", textAlign: "center",
+                borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.card, fontFamily: "inherit", outline: "none" }}
+            />
+            {error && (
+              <div style={{ fontSize: 14, color: C.red, textAlign: "center", padding: "4px 0" }}>{error}</div>
+            )}
+            <button onClick={handleVerify} disabled={loading || code.length < 6}
+              style={{
+                padding: "15px", fontSize: 17, fontWeight: 600, borderRadius: 12,
+                background: C.blue, color: "#FFF", border: "none", cursor: "pointer",
+                fontFamily: "inherit", opacity: (code.length < 6 || loading) ? 0.5 : 1, marginTop: 4,
+              }}>
+              {loading ? "Controleren..." : "Inloggen"}
+            </button>
+            <button onClick={() => { setSent(false); setCode(""); setError(""); }}
               style={{
                 padding: "12px", fontSize: 15, fontWeight: 500, borderRadius: 12,
                 background: "transparent", color: C.blue, border: `1.5px solid ${C.border}`,
-                cursor: "pointer", fontFamily: "inherit", marginTop: 4,
+                cursor: "pointer", fontFamily: "inherit",
               }}>
-              Ander e-mailadres gebruiken
+              Ander e-mailadres / opnieuw versturen
             </button>
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             <input type="email" placeholder="E-mailadres" value={email}
               onChange={e => setEmail(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && handleSendLink()}
+              onKeyDown={e => e.key === "Enter" && handleSendCode()}
               autoCapitalize="none" autoCorrect="off"
               style={{ padding: "14px 16px", fontSize: 16, borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.card, fontFamily: "inherit", outline: "none" }}
             />
             {error && (
               <div style={{ fontSize: 14, color: C.red, textAlign: "center", padding: "4px 0" }}>{error}</div>
             )}
-            <button onClick={handleSendLink} disabled={loading || !email}
+            <button onClick={handleSendCode} disabled={loading || !email}
               style={{
                 padding: "15px", fontSize: 17, fontWeight: 600, borderRadius: 12,
                 background: C.blue, color: "#FFF", border: "none", cursor: "pointer",
                 fontFamily: "inherit", opacity: (!email || loading) ? 0.5 : 1,
                 marginTop: 4,
               }}>
-              {loading ? "Versturen..." : "Stuur inloglink"}
+              {loading ? "Versturen..." : "Stuur inlogcode"}
             </button>
             <div style={{ fontSize: 13, color: C.text3, textAlign: "center", marginTop: 2 }}>
-              Geen wachtwoord nodig — je krijgt een inloglink per e-mail.
+              Geen wachtwoord nodig — je krijgt een code per e-mail.
             </div>
           </div>
         )}
