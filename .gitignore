@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+.env
+backend/.garmin_tokens/
+backend/service_account.json
