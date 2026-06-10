@@ -900,10 +900,7 @@ function LoginScreen() {
     if (!email) return;
     setLoading(true);
     setError("");
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: window.location.origin },
-    });
+    const { error } = await supabase.auth.signInWithOtp({ email });
     if (error) setError(error.message);
     else setSent(true);
     setLoading(false);
@@ -913,12 +910,14 @@ function LoginScreen() {
     if (!code) return;
     setLoading(true);
     setError("");
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token: code.trim(),
-      type: "email",
-    });
-    if (error) setError(error.message === "Token has expired or is invalid"
+    const token = code.trim();
+    // Probeer eerst het OTP-type voor login, val terug op magiclink-type
+    let { error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+    if (error) {
+      const retry = await supabase.auth.verifyOtp({ email, token, type: "magiclink" });
+      error = retry.error;
+    }
+    if (error) setError(/expired|invalid/i.test(error.message)
       ? "Code is ongeldig of verlopen — vraag een nieuwe aan"
       : error.message);
     setLoading(false);
