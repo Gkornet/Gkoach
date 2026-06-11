@@ -946,10 +946,10 @@ function LoginScreen() {
               </div>
             </div>
             <input type="text" inputMode="numeric" autoComplete="one-time-code"
-              placeholder="123456" value={code}
-              onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              placeholder="Inlogcode" value={code}
+              onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
               onKeyDown={e => e.key === "Enter" && handleVerify()}
-              style={{ padding: "14px 16px", fontSize: 22, letterSpacing: "6px", textAlign: "center",
+              style={{ padding: "14px 16px", fontSize: 22, letterSpacing: "4px", textAlign: "center",
                 borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.card, fontFamily: "inherit", outline: "none" }}
             />
             {error && (
