@@ -2560,6 +2560,21 @@ export default function App() {
                       .reduce((s, e) => s + (parseNum(e.alcohol) || 0), 0);
                   }).reverse();
 
+                  // Year-to-date: gemiddeld glazen per week sinds 1 januari
+                  const daysInclusive = (aStr, bStr) =>
+                    Math.round((new Date(bStr + "T12:00:00") - new Date(aStr + "T12:00:00")) / 86400000) + 1;
+                  const ytdStart = `${thisYear}-01-01`;
+                  const ytdTotal = entries
+                    .filter(e => e.date >= ytdStart && e.date <= todayStr)
+                    .reduce((s, e) => s + (parseNum(e.alcohol) || 0), 0);
+                  const ytdPerWeek = ytdTotal / (daysInclusive(ytdStart, todayStr) / 7);
+                  const lyYtdStart = `${lastYear}-01-01`;
+                  const lyYtdEnd = `${lastYear}-${todayStr.slice(5)}`;
+                  const lyYtdEntries = entries.filter(e => e.date >= lyYtdStart && e.date <= lyYtdEnd);
+                  const lyYtdPerWeek = lyYtdEntries.length > 0
+                    ? lyYtdEntries.reduce((s, e) => s + (parseNum(e.alcohol) || 0), 0) / (daysInclusive(lyYtdStart, lyYtdEnd) / 7)
+                    : null;
+
                   const alcTiles = [
                     { label: "Vandaag", val: todayAlcohol, ly: lyDayAlcohol },
                     { label: `Week (ma–nu)`, val: thisWeekAlcohol, ly: lyWeekAlcohol },
@@ -2589,6 +2604,28 @@ export default function App() {
                             </div>
                           );
                         })}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: C.bg, borderRadius: 12, marginBottom: 16 }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: C.text3, marginBottom: 3 }}>Gem. per week — sinds 1 jan</div>
+                          <div style={{ fontSize: 22, fontWeight: 700 }}>
+                            {ytdPerWeek.toFixed(1)}<span style={{ fontSize: 11, color: C.text3, fontWeight: 400 }}> gl/week</span>
+                          </div>
+                        </div>
+                        {lyYtdPerWeek != null ? (() => {
+                          const d = ytdPerWeek - lyYtdPerWeek;
+                          const col = d > 0.05 ? C.red : d < -0.05 ? C.green : C.text3;
+                          return (
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontSize: 16, fontWeight: 700, color: col }}>
+                                {d > 0 ? "+" : ""}{d.toFixed(1)}
+                              </div>
+                              <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>vs {lyYtdPerWeek.toFixed(1)} in {lastYear}</div>
+                            </div>
+                          );
+                        })() : (
+                          <div style={{ fontSize: 11, color: C.text3 }}>geen {lastYear}</div>
+                        )}
                       </div>
                       {wkAlcohol.some(v => v > 0) && (
                         <>
