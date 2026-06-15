@@ -7,8 +7,9 @@
 name: Garmin Daily Sync
 
 on:
-  schedule:
-    - cron: '0 * * * *'   # elk uur
+  # Uur-sync tijdelijk uitgezet tot de Garmin-tokens ververst zijn.
+  # schedule:
+  #   - cron: '0 * * * *'   # elk uur
   workflow_dispatch:  # Handmatig triggeren via GitHub UI of API
     inputs:
       date:
