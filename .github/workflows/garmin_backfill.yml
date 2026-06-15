@@ -1,0 +1,80 @@
+# .github/workflows/garmin_backfill.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# Haalt Garmin-data op voor een reeks dagen (start t/m eind) en schrijft ze
+# naar Supabase via upsert. Handmatig starten via Actions → "Garmin Backfill".
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Garmin Backfill
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: 'Startdatum (YYYY-MM-DD)'
+        required: true
+      end:
+        description: 'Einddatum t/m (YYYY-MM-DD)'
+        required: true
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TZ: Europe/Amsterdam
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Python instellen
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Dependencies installeren
+        run: pip install -r backend/requirements.txt
+
+      - name: Garmin tokens herstellen (cache)
+        uses: actions/cache@v5
+        with:
+          path: backend/.garmin_tokens
+          key: garmin-tokens-${{ github.run_id }}
+          restore-keys: |
+            garmin-tokens-
+
+      - name: Garmin tokens herstellen vanuit Secret
+        run: |
+          if [ -n "$GARMIN_TOKENS" ]; then
+            echo "$GARMIN_TOKENS" | base64 -d | tar -xz -C .
+            echo "  ✓ Tokens hersteld vanuit Secret"
+          fi
+        env:
+          GARMIN_TOKENS: ${{ secrets.GARMIN_TOKENS }}
+
+      - name: Backfill uitvoeren
+        env:
+          GARMIN_EMAIL: ${{ secrets.GARMIN_EMAIL }}
+          GARMIN_PASSWORD: ${{ secrets.GARMIN_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GARMIN_USER_ID: ${{ secrets.GARMIN_USER_ID }}
+        run: |
+          cd backend
+          d="${{ github.event.inputs.start }}"
+          stop="$(date -I -d "${{ github.event.inputs.end }} + 1 day")"
+          while [ "$d" != "$stop" ]; do
+            echo "::group::Sync $d"
+            SYNC_DATE="$d" python garmin_sync.py || echo "  ⚠ dag $d overgeslagen"
+            echo "::endgroup::"
+            sleep 2
+            d="$(date -I -d "$d + 1 day")"
+          done
+
+      - name: Tokens opslaan
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: backend/.garmin_tokens
+          key: garmin-tokens-${{ github.run_id }}
