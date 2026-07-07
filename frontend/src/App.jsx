@@ -34,6 +34,18 @@ const HEADERS = [
 // Plan item → entry field mapping (for auto-save)
 const PLAN_FIELD = { breathing: "breathing", sleep: "sleep_prep" };
 
+// ── Events (echte wedstrijden) ────────────────────────────────────────────────
+// Alleen wedstrijden waar je naartoe gaat. Alle events blijven bewaard (ook voor
+// historische data), maar events die al geweest zijn worden niet meer getoond bij
+// "Aankomende events". Trainingsdoelen horen hier NIET thuis — zie PRIMARY_RACE.
+const EVENTS = [
+  { name: "10K Noordwijk",    date: "2026-07-05", icon: "🏃" },
+  { name: "Gym-race Utrecht", date: "2026-10-04", icon: "💪" },
+];
+// Trainingsdoel (geen wedstrijd) — stuurt op de achtergrond het coach-plan aan:
+// de "X weken tot doel"-logica en de tempo-adviezen richting 45 min.
+const PRIMARY_RACE = { name: "10 km", date: "2026-10-03", goalTime: "45:00", goalPace: "4:30" };
+
 // ── Kracht & soepelheid oefeningen ───────────────────────────────────────────
 const STRENGTH_EXERCISES = [
   {
@@ -146,7 +158,7 @@ function calcReadiness(last, entries) {
 function getDailyPlan(todayData, contextData, entries, plannedWorkouts = [], stepGoal = 10000) {
   const last       = contextData;
   const readiness  = calcReadiness(last, entries);
-  const race1Days  = daysUntil("2026-07-05");
+  const race1Days  = daysUntil(PRIMARY_RACE.date);
   const todayStr   = today();
 
   // Trainingsbelasting: hoeveel dagen getraind van afgelopen 7
@@ -211,7 +223,7 @@ function getDailyPlan(todayData, contextData, entries, plannedWorkouts = [], ste
     if (race1Days > 42) {
       trainTask = { icon: "🏃", label: "Zone 2 duurloop", sub: `40–50 min · HR ${z2lo}–${z2hi} bpm · ${trainedLast7}/7 dagen actief`, color: C.orange, cat: "Training" };
     } else {
-      trainTask = { icon: "🏃", label: "Tempo-interval", sub: `${weeksToRace} weken tot 10km Noordwijk · 5×3 min @ racetempo`, color: C.orange, cat: "Training" };
+      trainTask = { icon: "🏃", label: "Tempo-interval", sub: `${weeksToRace} weken tot ${PRIMARY_RACE.name} (sub ${PRIMARY_RACE.goalTime}) · 5×3 min @ ${PRIMARY_RACE.goalPace}/km`, color: C.orange, cat: "Training" };
     }
   } else {
     // Geen plan, matig herstel
@@ -352,7 +364,7 @@ AL GEDAAN VANDAAG: ${done.length ? done.join(", ") : "nog niets"}
 NOG TE DOEN: ${pending.length ? pending.join(", ") : "alles gedaan"}
 GEPLANDE WORKOUT VANDAAG: ${todayWorkout ? `${todayWorkout.title} (${todayWorkout.sport})` : "geen gepland"}
 ACHTERGROND: Geen ervaren sporter — leert hardlopen, zittend beroep, herstelt van intensieve periode (faillissement bedrijf). Mentaal herstel is minstens even belangrijk als fysiek. Opbouwend en zacht is het devies.
-DOELEN: 10km Noordwijk 5 juli 2026 · Gym-race Utrecht 4 oktober 2026 (aspirationeel, niet professioneel schema)
+TRAININGSDOEL: 10 km in 45 min op 3 oktober 2026 (geen wedstrijd — een doel via het Garmin coach-plan). WEDSTRIJDEN: Gym-race Utrecht 4 oktober 2026 (aspirationeel, niet professioneel schema). De 10K Noordwijk (5 juli 2026) is al gelopen.
 
 Geef één tip van maximaal 2 zinnen. Geen opsommingstekens. Geen headers. Geen opmaak. Gewoon een directe, warme zin die nu het meest relevant is — gebaseerd op het tijdstip en wat er nog op de planning staat. Spreek de gebruiker direct aan met "je/jij". Wees bemoedigend, niet prestatiegericht.`;
 
@@ -384,7 +396,7 @@ CONTEXT/VRAAG: ${question || "Geef mijn dagelijkse check-in analyse."}
 
 ACHTERGROND GEBRUIKER: Geen ervaren sporter — leert hardlopen, zittend beroep, herstelt van intensieve periode (bedrijf failliet). Mentaal herstel even belangrijk als fysiek. Kleine stappen zijn successen. Bouw voorzichtig op.
 DOELEN: meer beweging, hogere HRV, betere slaap, meer energie, innerlijke rust.
-EVENTS (aspirationeel): 10km Noordwijk 5 juli 2026 · Gym-race Utrecht 4 oktober 2026.
+TRAININGSDOEL: 10 km in 45 min op 3 oktober 2026 (geen wedstrijd — Garmin coach-plan). WEDSTRIJDEN: Gym-race Utrecht 4 oktober 2026 (aspirationeel). De 10K Noordwijk (5 juli 2026) is al gelopen.
 HARDLOOP METRICS (als beschikbaar): avg_pace, cadence (ideaal ~180 spm), ground_contact (<250ms), vertical_osc (<9cm).
 
 Antwoord in EXACT deze structuur:
@@ -427,7 +439,7 @@ RECENTE DATA (tot 14 dagen): ${JSON.stringify(recent.map(e => ({
   steps: e.steps, weight: e.weight, mood: e.mood, alcohol: e.alcohol,
 })), null, 2)}
 
-ACHTERGROND: Geen ervaren sporter — leert hardlopen, zittend beroep, herstelt van intensieve periode (bedrijf failliet gegaan). Kleine stappen zijn successen. Mentaal herstel even belangrijk als fysiek. Heeft events: 10km Noordwijk 5 juli 2026, Gym-race Utrecht 4 oktober 2026.
+ACHTERGROND: Geen ervaren sporter — leert hardlopen, zittend beroep, herstelt van intensieve periode (bedrijf failliet gegaan). Kleine stappen zijn successen. Mentaal herstel even belangrijk als fysiek. Trainingsdoel: 10 km in 45 min op 3 oktober 2026 (Garmin coach-plan, geen wedstrijd). Wedstrijd: Gym-race Utrecht 4 oktober 2026. De 10K Noordwijk (5 juli 2026) is al gelopen.
 
 Geef coaching in EXACT deze 3 secties (gebruik ### als scheidingsteken):
 ### Goed bezig
@@ -482,7 +494,7 @@ UITLEG VAN DE METRIEKEN:
 - run_power (W): loopvermogen in watt. Hogere watt bij dezelfde hartslag = beter getraind.
 - training_effect: type trainingseffect (VO2MAX = intensief, BASE = rustig opbouwen, RECOVERY = herstel).
 
-GEBRUIKERSPROFIEL: Beginner hardloper, zittend beroep, voorzichtig opbouwen. Doel: 10km Noordwijk 5 juli 2026 (nog ${Math.max(0, Math.ceil((new Date("2026-07-05") - new Date()) / 86400000))} dagen).
+GEBRUIKERSPROFIEL: Beginner hardloper, zittend beroep, voorzichtig opbouwen. Trainingsdoel (Garmin coach-plan, geen wedstrijd): 10 km in 45 min op 3 oktober 2026 (nog ${Math.max(0, Math.ceil((new Date("2026-10-03") - new Date()) / 86400000))} dagen).
 
 Geef analyse in EXACT deze 3 secties (gebruik ### als scheidingsteken):
 ### Loopvorm nu
@@ -1103,7 +1115,8 @@ export default function App() {
     // Sla prefill over na opslaan — form staat al correct
     if (skipPrefillRef.current) { skipPrefillRef.current = false; return; }
     const existing = entries.find(e => e.date === entry.date);
-    // Laatste bekende gewicht (Garmin sync schrijft geen gewicht)
+    // Gewicht komt normaal uit Garmin (Index S2). Als er op deze dag nog niet
+    // gewogen is, val terug op het laatst bekende gewicht als prefill.
     const lastWeight = [...entries].filter(e => e.date <= entry.date && parseNum(e.weight) > 0).slice(-1)[0]?.weight;
     if (existing) {
       const base = { ...EMPTY, ...existing };
@@ -1192,8 +1205,6 @@ export default function App() {
   const nextDate    = viewIdx < sortedDates.length - 1 ? sortedDates[viewIdx + 1] : null;
   const isToday     = effectiveViewDate === today();
 
-  const race1      = daysUntil("2026-07-05");
-  const race2      = daysUntil("2026-10-04");
   const readiness  = calcReadiness(contextEntry, entries);
   const eventScore = calcEventScore(entries);
   // Step goal: gebruik Garmin's dailyStepGoal uit sheet (kolom AN) als reëel getal (≥3000),
@@ -1718,10 +1729,13 @@ export default function App() {
             {/* Aankomende events */}
             {(() => {
               const sc = eventScore;
-              const events = [
-                { name: "10K Noordwijk", date: "2026-07-05", days: race1, icon: "🏃" },
-                { name: "Gym-race Utrecht", date: "2026-10-04", days: race2, icon: "💪" },
-              ];
+              // Alleen events die nog moeten komen; voorbije events verbergen
+              // (data blijft wel bewaard in EVENTS voor historie).
+              const events = EVENTS
+                .map(ev => ({ ...ev, days: daysUntil(ev.date) }))
+                .filter(ev => ev.days >= 0)
+                .sort((a, b) => a.days - b.days);
+              if (events.length === 0) return null;
               return (
                 <div style={{ marginBottom: 12 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 10 }}>Aankomende events</div>

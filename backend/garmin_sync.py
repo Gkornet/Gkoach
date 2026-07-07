@@ -25,6 +25,10 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
 GARMIN_USER_ID       = os.getenv("GARMIN_USER_ID")
 TOKEN_STORE          = os.path.join(os.path.dirname(__file__), ".garmin_tokens")
 
+# Hoeveel dagen terug we gewicht van de weegschaal bijwerken (incl. vandaag).
+# Vangt weegmomenten op die pas na de ochtendsync met Garmin synchroniseerden.
+WEIGHT_LOOKBACK_DAYS = int(os.getenv("WEIGHT_LOOKBACK_DAYS", "7"))
+
 # Datum om te syncen — standaard vandaag, of override via SYNC_DATE (YYYY-MM-DD)
 # zodat we een gemiste dag handmatig kunnen ophalen.
 TODAY = os.getenv("SYNC_DATE") or datetime.date.today().isoformat()
@@ -195,6 +199,10 @@ def get_garmin_data():
     except Exception as e:
         print(f"  ⚠ VO2max: {e}")
 
+    # Gewicht wordt niet hier opgehaald maar via backfill_weight() — die pakt
+    # vandaag én de afgelopen dagen mee, zodat weegmomenten die pas later
+    # synchroniseerden alsnog op de juiste dag terechtkomen.
+
     return client, data
 
 
@@ -208,11 +216,12 @@ def write_to_supabase(garmin_data):
     # Bouw het record op — sla lege/None waarden over
     record = {k: v for k, v in garmin_data.items() if v not in ("", None)}
 
-    # Haal eventuele bestaande rij op zodat we user-data (gewicht, alcohol, bp) niet overschrijven
+    # Haal eventuele bestaande rij op zodat we handmatige user-data (alcohol, bp, mood, notities)
+    # niet overschrijven. Gewicht komt sinds de Garmin Index S2 weegschaal uit Garmin zelf.
     existing = sb.table("health_entries").select("*").eq("user_id", GARMIN_USER_ID).eq("date", TODAY).execute()
 
     if existing.data:
-        # UPDATE: alleen de Garmin-velden bijwerken, user-ingevulde velden ongemoeid laten
+        # UPDATE: alleen de Garmin-velden bijwerken, handmatig ingevulde velden ongemoeid laten
         sb.table("health_entries").update(record).eq("user_id", GARMIN_USER_ID).eq("date", TODAY).execute()
         print(f"  ✓ Bestaande rij bijgewerkt voor {TODAY} ({len(record)} velden)")
     else:
@@ -221,6 +230,49 @@ def write_to_supabase(garmin_data):
         record["date"]    = TODAY
         sb.table("health_entries").insert(record).execute()
         print(f"  ✓ Nieuwe rij toegevoegd voor {TODAY} ({len(record)} velden)")
+
+
+# ── Gewicht bijwerken (Garmin Index S2 weegschaal) ────────────────────────────
+def backfill_weight(garmin_client, days=WEIGHT_LOOKBACK_DAYS):
+    """Haalt weegmomenten op over de afgelopen `days` dagen (t/m TODAY) en
+    schrijft het gewicht per dag naar de juiste rij in Supabase. Zo worden ook
+    afgelopen dagen bijgewerkt — niet alleen vandaag."""
+    from supabase import create_client
+
+    end   = datetime.date.fromisoformat(TODAY)
+    start = end - datetime.timedelta(days=max(0, days - 1))
+    print(f"\nGewicht ophalen van {start} t/m {end} (weegschaal)...")
+
+    try:
+        body = garmin_client.get_body_composition(start.isoformat(), end.isoformat())
+    except Exception as e:
+        print(f"  ⚠ Gewicht ophalen mislukt: {e}")
+        return
+
+    rows = (body or {}).get("dateWeightList", []) or []
+    if not rows:
+        print("  → Geen weegmomenten in deze periode")
+        return
+
+    sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    count = 0
+    for r in rows:
+        cal      = r.get("calendarDate")
+        weight_g = r.get("weight")
+        if not cal or not weight_g:
+            continue
+        # Garmin levert gewicht in gram → kg met 1 decimaal
+        weight_kg = round(weight_g / 1000, 1)
+        # Upsert op (user_id, date): werkt alleen het weight-veld bij, laat de
+        # rest van de rij ongemoeid. Bestaat de dag nog niet, dan wordt hij aangemaakt.
+        sb.table("health_entries").upsert(
+            {"user_id": GARMIN_USER_ID, "date": cal, "weight": weight_kg},
+            on_conflict="user_id,date"
+        ).execute()
+        count += 1
+        print(f"  ✓ {cal}: {weight_kg} kg")
+
+    print(f"  ✓ {count} weegmoment(en) bijgewerkt in Supabase")
 
 
 # ── Geplande workouts schrijven ───────────────────────────────────────────────
@@ -328,7 +380,14 @@ if __name__ == "__main__":
         traceback.print_exc()
         sys.exit(1)
 
-    # Stap 3: Geplande workouts (alleen als Garmin werkte)
+    # Stap 3: Gewicht bijwerken over de afgelopen dagen (alleen als Garmin werkte)
+    if client:
+        try:
+            backfill_weight(client)
+        except Exception as e:
+            print(f"⚠ Gewicht bijwerken mislukt (niet fataal): {e}")
+
+    # Stap 4: Geplande workouts (alleen als Garmin werkte)
     if client:
         try:
             write_planned_workouts(client)
