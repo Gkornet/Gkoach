@@ -195,6 +195,20 @@ def get_garmin_data():
     except Exception as e:
         print(f"  ⚠ VO2max: {e}")
 
+    # Gewicht (Garmin Index S2 weegschaal) — alleen als er vandaag echt gewogen is
+    try:
+        body = client.get_body_composition(TODAY)
+        avg = (body or {}).get("totalAverage", {}) or {}
+        weight_g = avg.get("weight")
+        if weight_g:
+            # Garmin levert gewicht in gram → kg met 1 decimaal
+            data["weight"] = round(weight_g / 1000, 1)
+            print(f"  ✓ Gewicht: {data['weight']} kg")
+        else:
+            print("  → Geen weging vandaag (gewicht overgeslagen)")
+    except Exception as e:
+        print(f"  ⚠ Gewicht: {e}")
+
     return client, data
 
 
@@ -208,11 +222,12 @@ def write_to_supabase(garmin_data):
     # Bouw het record op — sla lege/None waarden over
     record = {k: v for k, v in garmin_data.items() if v not in ("", None)}
 
-    # Haal eventuele bestaande rij op zodat we user-data (gewicht, alcohol, bp) niet overschrijven
+    # Haal eventuele bestaande rij op zodat we handmatige user-data (alcohol, bp, mood, notities)
+    # niet overschrijven. Gewicht komt sinds de Garmin Index S2 weegschaal uit Garmin zelf.
     existing = sb.table("health_entries").select("*").eq("user_id", GARMIN_USER_ID).eq("date", TODAY).execute()
 
     if existing.data:
-        # UPDATE: alleen de Garmin-velden bijwerken, user-ingevulde velden ongemoeid laten
+        # UPDATE: alleen de Garmin-velden bijwerken, handmatig ingevulde velden ongemoeid laten
         sb.table("health_entries").update(record).eq("user_id", GARMIN_USER_ID).eq("date", TODAY).execute()
         print(f"  ✓ Bestaande rij bijgewerkt voor {TODAY} ({len(record)} velden)")
     else:
