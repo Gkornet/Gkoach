@@ -643,6 +643,42 @@ const Sparkline = ({ data, color, height = 40, fill = false, refLine = null }) =
   );
 };
 
+// Meerdere metingen op één as, geïndexeerd op 100 bij de start van het venster,
+// zodat metingen met verschillende schalen (kg, ms, bpm, ml/kg/min) samen de
+// ontwikkeling laten zien. Eén y-as (index) — nooit twee schalen.
+// series: [{ label, color, pts: [[dayIndex, indexedValue], ...] }]
+const MultiLineChart = ({ series, xMax, height = 150 }) => {
+  const drawable = (series || []).filter(s => s.pts && s.pts.length >= 2);
+  const all = drawable.flatMap(s => s.pts.map(p => p[1]));
+  if (drawable.length === 0 || all.length < 2) return null;
+
+  let yMin = Math.min(100, ...all), yMax = Math.max(100, ...all);
+  const padY = (yMax - yMin) * 0.14 || 1;
+  yMin -= padY; yMax += padY;
+
+  const W = 300, H = height, pL = 4, pR = 4, pT = 8, pB = 8;
+  const xPos = x => pL + (xMax ? (x / xMax) : 0) * (W - pL - pR);
+  const yPos = y => pT + (1 - (y - yMin) / (yMax - yMin || 1)) * (H - pT - pB);
+  const baseY = yPos(100);
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height }} preserveAspectRatio="none">
+      {/* Referentielijn: 100 = startwaarde */}
+      <line x1={pL} y1={baseY} x2={W - pR} y2={baseY} stroke={C.text3} strokeWidth="1" strokeDasharray="3,3" opacity="0.35" />
+      {drawable.map(s => {
+        const ptsStr = s.pts.map(([x, y]) => `${xPos(x)},${yPos(y)}`).join(" ");
+        const last = s.pts[s.pts.length - 1];
+        return (
+          <g key={s.label}>
+            <polyline fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" points={ptsStr} />
+            <circle cx={xPos(last[0])} cy={yPos(last[1])} r="2.5" fill={s.color} />
+          </g>
+        );
+      })}
+    </svg>
+  );
+};
+
 const Toggle = ({ checked, onChange }) => (
   <label style={{ position: "relative", display: "inline-block", width: 51, height: 31, flexShrink: 0, cursor: "pointer" }}>
     <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
@@ -2399,6 +2435,69 @@ export default function App() {
                   </div>
                 )}
 
+                {/* Ontwikkeling — meerdere metingen geïndexeerd op één as */}
+                {(() => {
+                  const WINDOW_DAYS = 90;
+                  const todayStr = today();
+                  const endD   = new Date(todayStr + "T12:00:00");
+                  const startD = new Date(endD); startD.setDate(endD.getDate() - (WINDOW_DAYS - 1));
+                  const ds = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+                  const startStr = ds(startD);
+                  const span   = WINDOW_DAYS - 1;
+                  const dayIdx = dateStr => Math.round((new Date(dateStr + "T12:00:00") - startD) / 86400000);
+                  const inWin  = entries.filter(e => e.date >= startStr && e.date <= todayStr);
+
+                  const METRICS = [
+                    { field: "weight", label: "Gewicht",      color: C.blue,   dec: 1, lowerBetter: true,  min: 40 },
+                    { field: "hrv_7d", label: "HRV",          color: C.green,  dec: 0, lowerBetter: false, min: 1  },
+                    { field: "rhr",    label: "Rusthartslag", color: C.orange, dec: 0, lowerBetter: true,  min: 20 },
+                    { field: "vo2max", label: "VO2max",       color: C.purple, dec: 1, lowerBetter: false, min: 30 },
+                  ];
+
+                  const series = METRICS.map(m => {
+                    const raw = inWin
+                      .map(e => ({ x: dayIdx(e.date), v: parseNum(e[m.field]) }))
+                      .filter(p => !isNaN(p.v) && p.v > m.min);
+                    if (raw.length < 2) return null;
+                    const base = raw[0].v;
+                    return { ...m, base, latest: raw[raw.length-1].v, count: raw.length,
+                             pts: raw.map(p => [p.x, (p.v / base) * 100]) };
+                  }).filter(Boolean);
+
+                  if (series.length < 2) return null;
+
+                  return (
+                    <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
+                        <div style={{ fontSize: 15, fontWeight: 600 }}>Ontwikkeling</div>
+                        <div style={{ fontSize: 11, color: C.text3 }}>100 = start · {WINDOW_DAYS} dagen</div>
+                      </div>
+                      <div style={{ fontSize: 12, color: C.text3, marginBottom: 12 }}>
+                        Relatieve verandering t.o.v. de eerste meting — gewicht &amp; rusthartslag omlaag is goed, HRV &amp; VO2max omhoog.
+                      </div>
+                      <MultiLineChart series={series} xMax={span} height={150} />
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginTop: 12 }}>
+                        {series.map(s => {
+                          const pct = s.latest / s.base * 100 - 100;
+                          const improved = s.lowerBetter ? pct < 0 : pct > 0;
+                          const col = Math.abs(pct) < 0.5 ? C.text3 : improved ? C.green : C.red;
+                          return (
+                            <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ width: 10, height: 10, borderRadius: 3, background: s.color, flexShrink: 0 }} />
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: 12, color: C.text2, fontWeight: 600 }}>{s.label}</div>
+                                <div style={{ fontSize: 12, color: C.text3 }}>
+                                  {s.latest.toFixed(s.dec)} · <span style={{ color: col, fontWeight: 600 }}>{pct>0?"+":""}{pct.toFixed(1)}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* HRV chart */}
                 {numArr(last30, "hrv").length >= 2 && (() => {
                   const hrvVals = numArr(last30,"hrv");
@@ -2585,8 +2684,11 @@ export default function App() {
                   const lyYtdStart = `${lastYear}-01-01`;
                   const lyYtdEnd = `${lastYear}-${todayStr.slice(5)}`;
                   const lyYtdEntries = entries.filter(e => e.date >= lyYtdStart && e.date <= lyYtdEnd);
+                  const lyYtdTotal = lyYtdEntries.length > 0
+                    ? lyYtdEntries.reduce((s, e) => s + (parseNum(e.alcohol) || 0), 0)
+                    : null;
                   const lyYtdPerWeek = lyYtdEntries.length > 0
-                    ? lyYtdEntries.reduce((s, e) => s + (parseNum(e.alcohol) || 0), 0) / (daysInclusive(lyYtdStart, lyYtdEnd) / 7)
+                    ? lyYtdTotal / (daysInclusive(lyYtdStart, lyYtdEnd) / 7)
                     : null;
 
                   const alcTiles = [
@@ -2618,6 +2720,31 @@ export default function App() {
                             </div>
                           );
                         })}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: C.bg, borderRadius: 12, marginBottom: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: C.text3, marginBottom: 3 }}>Totaal dit jaar — sinds 1 jan</div>
+                          <div style={{ fontSize: 26, fontWeight: 700 }}>
+                            {ytdTotal}<span style={{ fontSize: 12, color: C.text3, fontWeight: 400 }}> glazen</span>
+                          </div>
+                        </div>
+                        {lyYtdTotal != null ? (() => {
+                          const d = ytdTotal - lyYtdTotal;
+                          const col = d > 0 ? C.red : d < 0 ? C.green : C.text3;
+                          return (
+                            <div style={{ textAlign: "right" }}>
+                              <div style={{ fontSize: 18, fontWeight: 700, color: col }}>
+                                {d > 0 ? "+" : ""}{d}
+                              </div>
+                              <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>
+                                vs {lyYtdTotal} in {lastYear}
+                                {lyYtdTotal > 0 ? ` · ${d > 0 ? "+" : ""}${Math.round(d / lyYtdTotal * 100)}%` : ""}
+                              </div>
+                            </div>
+                          );
+                        })() : (
+                          <div style={{ fontSize: 11, color: C.text3 }}>geen {lastYear}</div>
+                        )}
                       </div>
                       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: C.bg, borderRadius: 12, marginBottom: 16 }}>
                         <div>
