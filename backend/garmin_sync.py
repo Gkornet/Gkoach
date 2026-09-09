@@ -1,11 +1,17 @@
 """
 garmin_sync.py
 --------------
-Haalt dagelijkse Garmin-data op en schrijft het naar Google Sheets.
-Draait elke ochtend automatisch via cron of GitHub Actions.
+Haalt Garmin-data op en schrijft die naar Supabase.
+Draait automatisch via GitHub Actions.
+
+Synct standaard niet alleen vandaag, maar een klein venster van de laatste
+dagen (SYNC_LOOKBACK_DAYS). Dat is bewust: Garmin levert een deel van de data
+pas later aan (activiteiten 's avonds laat, VO2max een dag na een training) en
+geplande Actions-runs worden door GitHub regelmatig overgeslagen. Door telkens
+een paar dagen terug te kijken herstelt de sync zichzelf.
 
 Installatie:
-  pip install garminconnect gspread google-auth python-dotenv
+  pip install garminconnect supabase python-dotenv
 """
 
 import os
@@ -33,11 +39,26 @@ WEIGHT_LOOKBACK_DAYS = int(os.getenv("WEIGHT_LOOKBACK_DAYS", "7"))
 # zodat we een gemiste dag handmatig kunnen ophalen.
 TODAY = os.getenv("SYNC_DATE") or datetime.date.today().isoformat()
 
-# ── Garmin ophalen ────────────────────────────────────────────────────────────
-def get_garmin_data():
+# Hoeveel dagen we per run opnieuw ophalen (incl. TODAY). 1 = alleen vandaag.
+# Standaard 3, zodat late activiteiten, na-geleverde VO2max en overgeslagen
+# Actions-runs vanzelf worden ingehaald. Bij een expliciete SYNC_DATE (backfill
+# van één dag) blijft het venster 1, tenzij anders opgegeven.
+_default_lookback = "1" if os.getenv("SYNC_DATE") else "3"
+SYNC_LOOKBACK_DAYS = int(os.getenv("SYNC_LOOKBACK_DAYS", _default_lookback))
+
+
+def sync_window():
+    """Lijst met datums om te syncen, oudste eerst."""
+    end = datetime.date.fromisoformat(TODAY)
+    n   = max(1, SYNC_LOOKBACK_DAYS)
+    return [(end - datetime.timedelta(days=i)).isoformat() for i in range(n - 1, -1, -1)]
+
+# ── Garmin inloggen ───────────────────────────────────────────────────────────
+def login_garmin():
+    """Logt één keer in en geeft een herbruikbare client terug."""
     from garminconnect import Garmin
 
-    print(f"[{TODAY}] Verbinden met Garmin Connect...")
+    print("Verbinden met Garmin Connect...")
 
     # Token-gebaseerd inloggen via ingebouwde tokenstore van garminconnect 0.3.x
     import sys
@@ -63,11 +84,18 @@ def get_garmin_data():
         client.login(tokenstore=token_dir)
         print(f"  ✓ Tokens opgeslagen in {token_dir}")
 
+    return client
+
+
+# ── Garmin data van één dag ophalen ───────────────────────────────────────────
+def fetch_day(client, day):
+    """Haalt alle Garmin-metingen voor `day` (YYYY-MM-DD) op."""
+    print(f"\n[{day}] Data ophalen...")
     data = {}
 
     # Slaap
     try:
-        sleep = client.get_sleep_data(TODAY)
+        sleep = client.get_sleep_data(day)
         daily = sleep.get("dailySleepDTO", {})
         data["sleep_h"]    = round(daily.get("sleepTimeSeconds", 0) / 3600, 2)
         data["sleep_q"]    = daily.get("sleepScores", {}).get("overall", {}).get("value", "")
@@ -79,7 +107,7 @@ def get_garmin_data():
 
     # HRV — drie waarden
     try:
-        hrv = client.get_hrv_data(TODAY)
+        hrv = client.get_hrv_data(day)
         summary = hrv.get("hrvSummary", {})
         # Gebruik `or ""` zodat None (Garmin retourneert null als data ontbreekt) ook "" wordt
         data["hrv"]      = summary.get("lastNightAvg")       or ""
@@ -92,7 +120,7 @@ def get_garmin_data():
 
     # Rusthartslag + stress + body battery + stappendoel
     try:
-        stats = client.get_stats(TODAY)
+        stats = client.get_stats(day)
         data["rhr"]          = stats.get("restingHeartRate", "")
         data["stress"]       = stats.get("averageStressLevel", "")
         data["body_battery"] = stats.get("bodyBatteryChargedValue", "")
@@ -103,7 +131,7 @@ def get_garmin_data():
 
     # Stappen + activiteiten
     try:
-        steps = client.get_steps_data(TODAY)
+        steps = client.get_steps_data(day)
         data["steps"] = sum(s.get("steps", 0) for s in steps) if isinstance(steps, list) else ""
         print(f"  ✓ Stappen: {data['steps']}")
     except Exception as e:
@@ -112,16 +140,16 @@ def get_garmin_data():
     # Activiteiten — alle activiteiten van vandaag + hardloop dynamics voor primaire
     WALKING_TYPES = {"walking", "casual_walking"}
     try:
-        yesterday = (datetime.date.fromisoformat(TODAY) - datetime.timedelta(days=1)).isoformat()
-        all_fetched = client.get_activities_by_date(yesterday, TODAY)
+        yesterday = (datetime.date.fromisoformat(day) - datetime.timedelta(days=1)).isoformat()
+        all_fetched = client.get_activities_by_date(yesterday, day)
 
         # Filter op alleen activiteiten van vandaag
         def activity_date(a):
             start = a.get("startTimeLocal", a.get("startTimeGMT", ""))
             return str(start)[:10]
-        activities = [a for a in all_fetched if activity_date(a) == TODAY]
+        activities = [a for a in all_fetched if activity_date(a) == day]
         # Geen fallback naar gisteren — als er vandaag niets is, blijft trained=False
-        print(f"  → {len(all_fetched)} activiteiten opgehaald, {len(activities)} van vandaag ({TODAY})")
+        print(f"  → {len(all_fetched)} activiteiten opgehaald, {len(activities)} van deze dag ({day})")
 
         # Sla alle activiteiten op als JSON-lijst
         all_acts = []
@@ -191,7 +219,7 @@ def get_garmin_data():
 
     # VO2max
     try:
-        vo2 = client.get_max_metrics(TODAY)
+        vo2 = client.get_max_metrics(day)
         if isinstance(vo2, list) and vo2:
             data["vo2max"] = vo2[0].get("generic", {}).get("vo2MaxPreciseValue", "")
             if data["vo2max"]:
@@ -203,33 +231,36 @@ def get_garmin_data():
     # vandaag én de afgelopen dagen mee, zodat weegmomenten die pas later
     # synchroniseerden alsnog op de juiste dag terechtkomen.
 
-    return client, data
+    return data
 
 
 # ── Supabase schrijven ────────────────────────────────────────────────────────
-def write_to_supabase(garmin_data):
+def write_to_supabase(garmin_data, day, sb=None):
     from supabase import create_client
 
-    print(f"\nVerbinden met Supabase...")
-    sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    if sb is None:
+        sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
     # Bouw het record op — sla lege/None waarden over
     record = {k: v for k, v in garmin_data.items() if v not in ("", None)}
+    if not record:
+        print(f"  → {day}: geen Garmin-velden om te schrijven")
+        return
 
-    # Haal eventuele bestaande rij op zodat we handmatige user-data (alcohol, bp, mood, notities)
-    # niet overschrijven. Gewicht komt sinds de Garmin Index S2 weegschaal uit Garmin zelf.
-    existing = sb.table("health_entries").select("*").eq("user_id", GARMIN_USER_ID).eq("date", TODAY).execute()
+    # Haal eventuele bestaande rij op zodat we handmatige user-data (alcohol, bp, mood, notities,
+    # voeding, meditatie) niet overschrijven. Gewicht komt uit de Garmin Index S2 weegschaal.
+    existing = sb.table("health_entries").select("id").eq("user_id", GARMIN_USER_ID).eq("date", day).execute()
 
     if existing.data:
         # UPDATE: alleen de Garmin-velden bijwerken, handmatig ingevulde velden ongemoeid laten
-        sb.table("health_entries").update(record).eq("user_id", GARMIN_USER_ID).eq("date", TODAY).execute()
-        print(f"  ✓ Bestaande rij bijgewerkt voor {TODAY} ({len(record)} velden)")
+        sb.table("health_entries").update(record).eq("user_id", GARMIN_USER_ID).eq("date", day).execute()
+        print(f"  ✓ {day}: rij bijgewerkt ({len(record)} velden)")
     else:
-        # INSERT: nieuwe rij voor vandaag
+        # INSERT: nieuwe rij voor deze dag
         record["user_id"] = GARMIN_USER_ID
-        record["date"]    = TODAY
+        record["date"]    = day
         sb.table("health_entries").insert(record).execute()
-        print(f"  ✓ Nieuwe rij toegevoegd voor {TODAY} ({len(record)} velden)")
+        print(f"  ✓ {day}: nieuwe rij toegevoegd ({len(record)} velden)")
 
 
 # ── Gewicht bijwerken (Garmin Index S2 weegschaal) ────────────────────────────
@@ -280,7 +311,7 @@ def write_planned_workouts(garmin_client):
     from supabase import create_client
 
     print(f"\nGeplande workouts ophalen...")
-    today_obj = datetime.date.today()
+    today_obj = datetime.date.fromisoformat(TODAY)
 
     # Haal komende 2 maanden op via Garmin
     items = []
@@ -323,29 +354,28 @@ def write_planned_workouts(garmin_client):
     print(f"  ✓ planned_workouts bijgewerkt in Supabase ({len(items)} rijen)")
 
 
-# ── Headers (moeten overeenkomen met de app én de Google Sheet kolomvolgorde) ──
-# Kolom A-J: datum t/m hrv, dan K=hrv_7d L=hrv_5min (door gebruiker aangemaakt),
-# dan M=rhr N=stress O=body_battery P=steps, enz.
+# ── Velden (referentie — moet overeenkomen met de app en het Supabase-schema) ──
 HEADERS = [
-    "date", "weight", "alcohol", "bp_sys", "bp_dia",          # A–E
-    "sleep_h", "sleep_q", "sleep_deep", "sleep_rem",           # F–I
-    "hrv", "hrv_7d", "hrv_5min",                               # J–L
-    "rhr", "stress", "body_battery", "steps",                  # M–P
-    "trained", "train_type", "train_min", "train_dist",        # Q–T
-    "avg_hr", "max_hr", "avg_pace", "cadence",                 # U–X
-    "ground_contact", "vertical_osc", "vertical_ratio",        # Y–AA
-    "stride_length", "training_effect", "vo2max", "run_power", # AB–AE
-    "energy", "mental_unrest", "breathing", "breathing_type",  # AF–AI
-    "notes", "sleep_prep", "koffie", "mood",                   # AJ–AM
-    "activities",                                               # AN
-    "step_goal",                                               # AO
+    "date", "weight", "alcohol", "bp_sys", "bp_dia",
+    "sleep_h", "sleep_q", "sleep_deep", "sleep_rem",
+    "hrv", "hrv_7d", "hrv_5min",
+    "rhr", "stress", "body_battery", "steps",
+    "trained", "train_type", "train_min", "train_dist",
+    "avg_hr", "max_hr", "avg_pace", "cadence",
+    "ground_contact", "vertical_osc", "vertical_ratio",
+    "stride_length", "training_effect", "vo2max", "run_power",
+    "energy", "mental_unrest", "breathing", "breathing_type",
+    "notes", "sleep_prep", "koffie", "mood",
+    "activities", "step_goal",
+    # Handmatig — voeding & geest
+    "meditation_min", "veg_fruit", "protein_ok", "late_meal", "snacks",
 ]
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print(f"\n{'='*50}")
-    print(f"  Garmin → Sheets sync — {TODAY}")
+    print(f"  Garmin → Supabase sync — {TODAY}")
     print(f"{'='*50}\n")
 
     if not GARMIN_EMAIL or not GARMIN_PASSWORD:
@@ -356,29 +386,54 @@ if __name__ == "__main__":
         print("FOUT: Stel SUPABASE_URL, SUPABASE_SERVICE_KEY en GARMIN_USER_ID in in je .env bestand")
         sys.exit(1)
 
-    # Stap 1: Garmin data ophalen (niet fataal als dit mislukt)
-    garmin_data = {}
+    # Stap 1: één keer inloggen bij Garmin (niet fataal als dit mislukt)
     client = None
-    garmin_ok = False
     try:
-        client, garmin_data = get_garmin_data()
-        garmin_ok = True
-        print(f"\n✅ Garmin data opgehaald ({len(garmin_data)} velden)")
+        client = login_garmin()
     except Exception as e:
         import traceback
-        print(f"\n❌ Garmin ophalen mislukt: {e}")
+        print(f"\n❌ Garmin inloggen mislukt: {e}")
         traceback.print_exc()
-        print("  → Ga door met lege Garmin data (rij voor vandaag wordt toch aangemaakt)")
 
-    # Stap 2: Altijd naar Supabase schrijven (zelfs als Garmin leeg is)
-    try:
-        write_to_supabase(garmin_data)
-        print(f"✅ Supabase bijgewerkt voor {TODAY}")
-    except Exception as e:
-        import traceback
-        print(f"\n❌ Supabase schrijven mislukt: {e}")
-        traceback.print_exc()
-        sys.exit(1)
+    days = sync_window()
+    print(f"\nSync-venster: {days[0]} t/m {days[-1]} ({len(days)} dag(en))")
+
+    # Stap 2: per dag ophalen en wegschrijven. Elke dag staat op zichzelf: een
+    # fout op één dag mag de rest niet blokkeren.
+    from supabase import create_client
+    sb = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+
+    ok_days, failed_days = [], []
+    for day in days:
+        try:
+            data = fetch_day(client, day) if client else {}
+        except Exception as e:
+            print(f"  ✗ {day}: Garmin ophalen mislukt: {e}")
+            data = {}
+
+        try:
+            # Ook zonder Garmin-data de rij voor vandaag aanmaken, zodat de app
+            # altijd een rij heeft om handmatige invoer aan te hangen.
+            if not data and day != TODAY:
+                print(f"  → {day}: overgeslagen (geen data)")
+                failed_days.append(day)
+                continue
+            if not data and day == TODAY:
+                existing = sb.table("health_entries").select("id") \
+                    .eq("user_id", GARMIN_USER_ID).eq("date", day).execute()
+                if not existing.data:
+                    sb.table("health_entries").insert(
+                        {"user_id": GARMIN_USER_ID, "date": day}).execute()
+                    print(f"  ✓ {day}: lege rij aangemaakt")
+                failed_days.append(day)
+                continue
+            write_to_supabase(data, day, sb=sb)
+            ok_days.append(day)
+        except Exception as e:
+            import traceback
+            print(f"  ✗ {day}: Supabase schrijven mislukt: {e}")
+            traceback.print_exc()
+            failed_days.append(day)
 
     # Stap 3: Gewicht bijwerken over de afgelopen dagen (alleen als Garmin werkte)
     if client:
@@ -394,7 +449,13 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"⚠ Geplande workouts mislukt (niet fataal): {e}")
 
-    if garmin_ok:
-        print(f"\n✅ Sync volledig voltooid voor {TODAY}")
+    print(f"\n{'='*50}")
+    if ok_days and not failed_days:
+        print(f"✅ Sync voltooid — {len(ok_days)} dag(en): {', '.join(ok_days)}")
+    elif ok_days:
+        print(f"⚠ Sync deels voltooid — ok: {', '.join(ok_days)} | zonder data: {', '.join(failed_days)}")
     else:
-        print(f"\n⚠ Sync gedeeltelijk voltooid voor {TODAY} — Garmin data ontbreekt, rij is aangemaakt")
+        print(f"❌ Sync zonder resultaat — geen enkele dag geschreven")
+        # Alleen falen als er echt niets is gelukt én Garmin onbereikbaar was
+        if client is None:
+            sys.exit(1)
