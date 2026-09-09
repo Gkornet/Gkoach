@@ -57,6 +57,13 @@ CREATE TABLE health_entries (
   -- Overig Garmin
   energy           REAL,
 
+  -- Meditatie & voeding (handmatig via de check-in)
+  meditation_min   INTEGER,   -- minuten mediteren (doel 15)
+  veg_fruit        INTEGER,   -- porties groente & fruit (doel 5)
+  protein_ok       BOOLEAN,   -- eiwit bij elke maaltijd
+  late_meal        BOOLEAN,   -- hoofdmaaltijd <2u voor bed
+  snacks           INTEGER,   -- aantal bewerkte snacks
+
   -- Check-in
   mental_unrest    BOOLEAN,
   breathing        BOOLEAN,

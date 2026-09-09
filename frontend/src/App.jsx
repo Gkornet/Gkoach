@@ -29,7 +29,17 @@ const HEADERS = [
   "notes","sleep_prep","koffie","mood",                       // AJ–AM
   "activities",                                               // AN
   "step_goal",                                               // AO
+  // Handmatig — geest & voeding
+  "meditation_min",                                           // minuten mediteren
+  "veg_fruit",                                                // porties groente & fruit
+  "protein_ok",                                               // eiwit bij elke maaltijd
+  "late_meal",                                                // laat gegeten (<2u voor bed)
+  "snacks",                                                   // bewerkte snacks
 ];
+
+// Dagelijkse doelen voor de handmatige leefstijlvelden
+const MEDITATION_GOAL = 15;   // minuten per dag
+const VEG_GOAL        = 5;    // porties groente & fruit per dag
 
 // Plan item → entry field mapping (for auto-save)
 const PLAN_FIELD = { breathing: "breathing", sleep: "sleep_prep" };
@@ -254,10 +264,28 @@ function getDailyPlan(todayData, contextData, entries, plannedWorkouts = [], ste
     : `Schermen weg ${screenOff} · in bed om ${bedTime} · wekker 06:30`;
 
   const todaySteps = parseNum(todayData?.steps);
+
+  // Meditatie — doel 15 min per dag
+  const medMin  = parseNum(todayData?.meditation_min);
+  const medDone = !isNaN(medMin) && medMin >= MEDITATION_GOAL;
+  const medSub  = !isNaN(medMin) && medMin > 0
+    ? `${Math.round(medMin)} / ${MEDITATION_GOAL} min vandaag`
+    : `${MEDITATION_GOAL} min · rustig zitten, adem als anker`;
+
+  // Voeding — groente/fruit is de meest bepalende dagelijkse knop
+  const veg     = parseNum(todayData?.veg_fruit);
+  const vegDone = !isNaN(veg) && veg >= VEG_GOAL;
+  const proteinOk = isTrue(todayData?.protein_ok);
+  const vegSub  = !isNaN(veg) && veg > 0
+    ? `${Math.round(veg)} / ${VEG_GOAL} porties${proteinOk ? " · eiwit op orde" : ""}`
+    : `${VEG_GOAL} porties groente & fruit · eiwit bij elke maaltijd`;
+
   return [
     { id: "morning", cat: "Ochtend", icon: "🌅", label: "Ochtendmeting", sub: "HRV & body battery ophalen via Garmin", color: C.blue, auto: true, done: !!todayData?.hrv },
+    { id: "meditatie", cat: "Mindfulness", icon: "🧘", label: "Mediteren", sub: medSub, color: C.indigo, done: medDone },
     { id: "breathing", cat: "Mindfulness", icon: "🫁", label: "Box breathing", sub: "4×4 min · 4 tellen in-hold-uit-hold", color: C.purple, done: isTrue(todayData?.breathing) },
     { ...trainTask, id: "training", done: trainDone },
+    { id: "voeding", cat: "Voeding", icon: "🥗", label: "Voeding op orde", sub: vegSub, color: C.green, done: vegDone && proteinOk },
     { id: "steps", cat: "Beweging", icon: "👟", label: "Dagelijks stappendoel",
       sub: `${!isNaN(todaySteps) ? Math.round(todaySteps).toLocaleString("nl") : "—"} / ${stepGoal.toLocaleString("nl")} vandaag`,
       color: C.green, auto: true, done: todaySteps >= stepGoal },
@@ -269,6 +297,28 @@ function getDailyPlan(todayData, contextData, entries, plannedWorkouts = [], ste
 
 // ── Task detail content ───────────────────────────────────────────────────────
 const TASK_DETAILS = {
+  meditatie: {
+    title: "Mediteren",
+    steps: [
+      { icon: "🪑", text: "Zit rechtop op een stoel of kussen. Ogen dicht of blik zacht omlaag." },
+      { icon: "⏱", text: `Zet een timer op ${MEDITATION_GOAL} minuten, zodat je niet op de klok hoeft te letten.` },
+      { icon: "🌬", text: "Breng je aandacht naar de adem. Voel de lucht bij je neus in- en uitgaan." },
+      { icon: "🔁", text: "Dwaalt je aandacht af? Merk het op zonder oordeel en ga terug naar de adem. Dát is de oefening." },
+      { icon: "🕰", text: "Vaste tijd werkt het best — direct na het opstaan of vlak na werk." },
+    ],
+    tip: "Afdwalen is geen falen: elke keer dat je terugkeert naar de adem is één herhaling. Regelmaat telt zwaarder dan lengte — 15 minuten elke dag doet meer voor je rust en HRV dan een uur op zondag.",
+  },
+  voeding: {
+    title: "Voeding op orde",
+    steps: [
+      { icon: "🥬", text: `Mik op ${VEG_GOAL} porties groente & fruit. Eén portie ≈ een handvol.` },
+      { icon: "🍳", text: "Zet bij elke maaltijd een eiwitbron centraal: eieren, zuivel, peulvruchten, vis, kip, tofu." },
+      { icon: "🍚", text: "Rond een training koolhydraten: ervoor voor brandstof, erna voor herstel." },
+      { icon: "🌙", text: "Eet je hoofdmaaltijd bij voorkeur meer dan 2 uur voor bed — laat eten verstoort je diepe slaap." },
+      { icon: "💧", text: "Drink over de dag verspreid water. Dorst wordt makkelijk verward met trek." },
+    ],
+    tip: "Voor jou telt vooral eiwit en herstel: bij hardlooptraining heb je ruwweg 1,4–1,8 g eiwit per kg lichaamsgewicht per dag nodig. Verdeel dat over de dag in plaats van alles 's avonds — je lichaam kan het dan beter gebruiken voor spierherstel.",
+  },
   morning: {
     title: "Ochtendmeting",
     steps: [
@@ -365,6 +415,7 @@ NOG TE DOEN: ${pending.length ? pending.join(", ") : "alles gedaan"}
 GEPLANDE WORKOUT VANDAAG: ${todayWorkout ? `${todayWorkout.title} (${todayWorkout.sport})` : "geen gepland"}
 ACHTERGROND: Geen ervaren sporter — leert hardlopen, zittend beroep, herstelt van intensieve periode (faillissement bedrijf). Mentaal herstel is minstens even belangrijk als fysiek. Opbouwend en zacht is het devies.
 TRAININGSDOEL: 10 km in 45 min op 3 oktober 2026 (geen wedstrijd — een doel via het Garmin coach-plan). WEDSTRIJDEN: Gym-race Utrecht 4 oktober 2026 (aspirationeel, niet professioneel schema). De 10K Noordwijk (5 juli 2026) is al gelopen.
+GEWOONTES: dagelijks mediteren (doel 15 min) en bewuster eten zijn nieuwe gewoontes — moedig ze aan als ze nog niet gedaan zijn.
 
 Geef één tip van maximaal 2 zinnen. Geen opsommingstekens. Geen headers. Geen opmaak. Gewoon een directe, warme zin die nu het meest relevant is — gebaseerd op het tijdstip en wat er nog op de planning staat. Spreek de gebruiker direct aan met "je/jij". Wees bemoedigend, niet prestatiegericht.`;
 
@@ -395,7 +446,7 @@ ${todayRow ? `VANDAAG (${todayStr}) DATA BESCHIKBAAR: HRV=${todayRow.hrv}, slaap
 CONTEXT/VRAAG: ${question || "Geef mijn dagelijkse check-in analyse."}
 
 ACHTERGROND GEBRUIKER: Geen ervaren sporter — leert hardlopen, zittend beroep, herstelt van intensieve periode (bedrijf failliet). Mentaal herstel even belangrijk als fysiek. Kleine stappen zijn successen. Bouw voorzichtig op.
-DOELEN: meer beweging, hogere HRV, betere slaap, meer energie, innerlijke rust.
+DOELEN: meer beweging, hogere HRV, betere slaap, meer energie, innerlijke rust, dagelijks 15 min mediteren en bewuster eten.
 TRAININGSDOEL: 10 km in 45 min op 3 oktober 2026 (geen wedstrijd — Garmin coach-plan). WEDSTRIJDEN: Gym-race Utrecht 4 oktober 2026 (aspirationeel). De 10K Noordwijk (5 juli 2026) is al gelopen.
 HARDLOOP METRICS (als beschikbaar): avg_pace, cadence (ideaal ~180 spm), ground_contact (<250ms), vertical_osc (<9cm).
 
@@ -437,9 +488,12 @@ RECENTE DATA (tot 14 dagen): ${JSON.stringify(recent.map(e => ({
   stress: e.stress, body_battery: e.body_battery,
   trained: e.trained, train_type: e.train_type, train_min: e.train_min,
   steps: e.steps, weight: e.weight, mood: e.mood, alcohol: e.alcohol,
+  meditation_min: e.meditation_min, veg_fruit: e.veg_fruit,
+  protein_ok: e.protein_ok, late_meal: e.late_meal, snacks: e.snacks,
 })), null, 2)}
 
 ACHTERGROND: Geen ervaren sporter — leert hardlopen, zittend beroep, herstelt van intensieve periode (bedrijf failliet gegaan). Kleine stappen zijn successen. Mentaal herstel even belangrijk als fysiek. Trainingsdoel: 10 km in 45 min op 3 oktober 2026 (Garmin coach-plan, geen wedstrijd). Wedstrijd: Gym-race Utrecht 4 oktober 2026. De 10K Noordwijk (5 juli 2026) is al gelopen.
+GEWOONTES: mediteert dagelijks (doel 15 min, veld meditation_min) en wil bewuster eten (velden veg_fruit, protein_ok, late_meal, snacks). Lege velden = niet ingevuld, niet nul.
 
 Geef coaching in EXACT deze 3 secties (gebruik ### als scheidingsteken):
 ### Goed bezig
@@ -465,6 +519,73 @@ Toon: direct, concreet, geen wolligheid. Max 180 woorden totaal.`;
   });
   const d2 = await res.json();
   return d2.content?.find(b => b.type === "text")?.text || "";
+}
+
+async function fetchNutritionCoaching(entries) {
+  // 21 dagen geeft genoeg body om een patroon te zien zonder de prompt te vullen
+  const recent = entries.slice(-21).map(e => ({
+    date: e.date,
+    weight: e.weight,
+    veg_fruit: e.veg_fruit, protein_ok: e.protein_ok,
+    late_meal: e.late_meal, snacks: e.snacks,
+    alcohol: e.alcohol, koffie: e.koffie,
+    trained: e.trained, train_type: e.train_type, train_min: e.train_min, train_dist: e.train_dist,
+    sleep_h: e.sleep_h, sleep_q: e.sleep_q, hrv: e.hrv, rhr: e.rhr, body_battery: e.body_battery,
+    mood: e.mood,
+  }));
+
+  const wVals = numArr(entries.slice(-30), "weight").filter(v => v > 40);
+  const weightLine = wVals.length >= 2
+    ? `Gewicht: ${wVals[0].toFixed(1)} → ${wVals[wVals.length-1].toFixed(1)} kg over de laatste ${wVals.length} wegingen.`
+    : "Gewicht: te weinig wegingen voor een trend.";
+  const daysToRace = Math.max(0, Math.ceil((new Date(PRIMARY_RACE.date) - new Date()) / 86400000));
+
+  const prompt = `Je bent een sportdiëtist die een recreatieve hardloper begeleidt. Geef concreet, praktisch voedingsadvies.
+
+DATA (laatste 21 dagen):
+${JSON.stringify(recent, null, 2)}
+
+${weightLine}
+DOEL: 10 km in ${PRIMARY_RACE.goalTime} op ${PRIMARY_RACE.date} (nog ${daysToRace} dagen). Trainingsplan loopt via Garmin.
+DAGDOELEN IN DE APP: ${VEG_GOAL} porties groente & fruit, eiwit bij elke maaltijd, niet laat eten (<2u voor bed), snacks beperken.
+
+VELDUITLEG:
+- veg_fruit = porties groente & fruit die dag
+- protein_ok = bij elke maaltijd een eiwitbron (true/false)
+- late_meal = hoofdmaaltijd binnen 2 uur voor bed (true/false)
+- snacks = aantal keer bewerkte snacks
+- alcohol = glazen die dag
+- Lege velden = niet ingevuld, dat is géén nul. Zeg het als er te weinig data is in plaats van te gissen.
+
+ACHTERGROND: Geen ervaren sporter, zittend beroep, bouwt voorzichtig op. Wil beter leren eten. Warme, niet-moraliserende toon — geen streng dieetadvies, geen calorieën tellen.
+
+Geef antwoord in EXACT deze 4 secties (gebruik ### als scheidingsteken):
+### Wat de data laat zien
+Wat valt op in het eetpatroon van de afgelopen weken? Noem concrete getallen. Benoem ook wat er goed gaat.
+
+### Verband met je training en herstel
+Leg één of twee concrete verbanden tussen voeding (of alcohol/laat eten) en slaap, HRV of trainingskwaliteit — alleen als de data dat ondersteunt.
+
+### Doe dit deze week
+2-3 concrete, kleine aanpassingen. Praktisch voor iemand met een zittend beroep. Noem voorbeelden van producten of maaltijden.
+
+### Rond je training
+Kort en concreet: wat te eten voor en na een duurloop of intervaltraining.
+
+Toon: direct, warm, concreet. Geen wolligheid, geen opsomming van open deuren. Max 260 woorden totaal.`;
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": CLAUDE_KEY,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 900, messages: [{ role: "user", content: prompt }] })
+  });
+  const d = await res.json();
+  return d.content?.find(b => b.type === "text")?.text || "";
 }
 
 async function fetchRunCoaching(runs) {
@@ -523,23 +644,71 @@ Toon: direct, technisch maar toegankelijk, geen wolligheid. Max 180 woorden tota
 }
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
-const C = {
-  bg:      "#F2F2F7",
-  card:    "#FFFFFF",
-  blue:    "#007AFF",
-  green:   "#34C759",
-  red:     "#FF3B30",
-  orange:  "#FF9500",
-  purple:  "#AF52DE",
-  teal:    "#5AC8FA",
-  indigo:  "#5856D6",
-  yellow:  "#FFCC00",
-  text:    "#000000",
-  text2:   "#3C3C43",
-  text3:   "#8E8E93",
-  border:  "rgba(60,60,67,0.12)",
-  fill:    "rgba(120,120,128,0.08)",
+// ── Kleuren ───────────────────────────────────────────────────────────────────
+// Apple's systeemkleuren, met een aparte set voor donkere modus. iOS gebruikt in
+// dark mode andere, iets fellere varianten (niet simpelweg de lichte kleuren op
+// een donkere achtergrond) — daarom een expliciet gekozen palet per modus.
+// `inset` is het vlak van een verdiept blok bínnen een kaart.
+const PALETTES = {
+  light: {
+    bg:      "#F2F2F7",
+    card:    "#FFFFFF",
+    inset:   "#F2F2F7",
+    blue:    "#007AFF",
+    green:   "#34C759",
+    red:     "#FF3B30",
+    orange:  "#FF9500",
+    purple:  "#AF52DE",
+    teal:    "#5AC8FA",
+    indigo:  "#5856D6",
+    yellow:  "#FFCC00",
+    text:    "#000000",
+    text2:   "#3C3C43",
+    text3:   "#8E8E93",
+    border:  "rgba(60,60,67,0.12)",
+    fill:    "rgba(120,120,128,0.08)",
+    chart:   { s1: "#007AFF", s2: "#248A3D", s3: "#AF52DE", s4: "#B76A00" },
+  },
+  dark: {
+    bg:      "#000000",
+    card:    "#1C1C1E",
+    inset:   "#2C2C2E",
+    blue:    "#0A84FF",
+    green:   "#30D158",
+    red:     "#FF453A",
+    orange:  "#FF9F0A",
+    purple:  "#BF5AF2",
+    teal:    "#64D2FF",
+    indigo:  "#5E5CE6",
+    yellow:  "#FFD60A",
+    text:    "#FFFFFF",
+    text2:   "#EBEBF5",
+    text3:   "#98989F",
+    border:  "rgba(84,84,88,0.65)",
+    fill:    "rgba(120,120,128,0.24)",
+    chart:   { s1: "#0A84FF", s2: "#1E8A3E", s3: "#BF5AF2", s4: "#D27700" },
+  },
 };
+
+const prefersDark = () =>
+  typeof window !== "undefined" && typeof window.matchMedia === "function" &&
+  window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+// C is bewust muteerbaar: alle componenten lezen C.x tijdens het renderen, dus
+// door het object in plaats te vervangen bij een thema-wissel volgt de hele app
+// zonder dat elke kleur door de React-boom gesleept hoeft te worden.
+const C = { ...(prefersDark() ? PALETTES.dark : PALETTES.light) };
+
+function applyTheme(mode) {
+  Object.assign(C, PALETTES[mode] || PALETTES.light);
+  if (typeof document !== "undefined") {
+    document.documentElement.style.colorScheme = mode;
+    document.body.style.background = C.bg;
+    document.body.style.color = C.text;
+    // theme-color staat als twee media-varianten in index.html en volgt daarmee
+    // vanzelf de systeeminstelling — hier niets aan aanpassen.
+  }
+}
 
 const readinessColor = (s) => s >= 75 ? C.green : s >= 50 ? C.orange : C.red;
 const readinessLabel = (s) => s >= 75 ? "Klaar" : s >= 50 ? "Matig" : "Herstel";
@@ -679,9 +848,10 @@ const MultiLineChart = ({ series, xMax, height = 150 }) => {
   );
 };
 
-const Toggle = ({ checked, onChange }) => (
+const Toggle = ({ checked, onChange, label }) => (
   <label style={{ position: "relative", display: "inline-block", width: 51, height: 31, flexShrink: 0, cursor: "pointer" }}>
-    <input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+    <input type="checkbox" role="switch" aria-label={label} checked={checked}
+      onChange={e => onChange(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
     <span style={{ position: "absolute", inset: 0, borderRadius: 31, transition: "0.2s", background: checked ? C.green : "rgba(120,120,128,0.3)" }}>
       <span style={{
         position: "absolute", height: 27, width: 27, left: checked ? 21 : 2, top: 2,
@@ -692,6 +862,19 @@ const Toggle = ({ checked, onChange }) => (
   </label>
 );
 
+// Rij met omschrijving links en een schakelaar rechts. De hele rij is minstens
+// 44pt hoog, de minimale aanraakmaat uit de Apple HIG.
+const ToggleRow = ({ label, hint, checked, onChange }) => (
+  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+                gap: 12, minHeight: 44, paddingTop: 6 }}>
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 15, color: C.text }}>{label}</div>
+      {hint && <div style={{ fontSize: 12, color: C.text3, marginTop: 1 }}>{hint}</div>}
+    </div>
+    <Toggle checked={checked} onChange={onChange} label={label} />
+  </div>
+);
+
 const Stepper = ({ label, value, onChange, step = 1, min = 0, max = 99, unit = "" }) => {
   const val = isNaN(parseFloat(value)) ? 0 : parseFloat(value);
   const dec = String(step).includes(".") ? String(step).split(".")[1].length : 0;
@@ -700,12 +883,14 @@ const Stepper = ({ label, value, onChange, step = 1, min = 0, max = 99, unit = "
     <div style={{ background: C.fill, borderRadius: 16, padding: "14px 12px" }}>
       <div style={{ fontSize: 13, color: C.text3, marginBottom: 8 }}>{label}</div>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
-        <button onPointerDown={e => { e.preventDefault(); onChange(Math.max(min, parseFloat((val - step).toFixed(dec)))); }} style={btnStyle}>−</button>
-        <div style={{ textAlign: "center", flex: 1, minWidth: 0 }}>
+        <button aria-label={`${label} verlagen`}
+          onPointerDown={e => { e.preventDefault(); onChange(Math.max(min, parseFloat((val - step).toFixed(dec)))); }} style={btnStyle}>−</button>
+        <div style={{ textAlign: "center", flex: 1, minWidth: 0 }} role="status" aria-label={`${label}: ${dec > 0 ? val.toFixed(dec) : val} ${unit}`}>
           <span style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.5px" }}>{dec > 0 ? val.toFixed(dec) : val}</span>
           {unit && <span style={{ fontSize: 13, color: C.text3, marginLeft: 3 }}>{unit}</span>}
         </div>
-        <button onPointerDown={e => { e.preventDefault(); onChange(Math.min(max, parseFloat((val + step).toFixed(dec)))); }} style={btnStyle}>+</button>
+        <button aria-label={`${label} verhogen`}
+          onPointerDown={e => { e.preventDefault(); onChange(Math.min(max, parseFloat((val + step).toFixed(dec)))); }} style={btnStyle}>+</button>
       </div>
     </div>
   );
@@ -1034,9 +1219,13 @@ function LoginScreen() {
             <button onClick={handleSendCode} disabled={loading || !email}
               style={{
                 padding: "15px", fontSize: 17, fontWeight: 600, borderRadius: 12,
-                background: C.blue, color: "#FFF", border: "none", cursor: "pointer",
-                fontFamily: "inherit", opacity: (!email || loading) ? 0.5 : 1,
-                marginTop: 4,
+                // Uitgeschakeld: neutrale vulling met gedempt label in plaats van
+                // het hele element dimmen — dat laatste geeft op een donkere
+                // achtergrond grijze tekst op donkerblauw (te weinig contrast).
+                background: (!email || loading) ? C.fill : C.blue,
+                color: (!email || loading) ? C.text3 : "#FFF",
+                border: "none", cursor: (!email || loading) ? "default" : "pointer",
+                fontFamily: "inherit", marginTop: 4, minHeight: 44,
               }}>
               {loading ? "Versturen..." : "Stuur inlogcode"}
             </button>
@@ -1052,6 +1241,23 @@ function LoginScreen() {
 
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
+  // Thema volgt de systeeminstelling (Apple HIG: de app kiest niet voor de
+  // gebruiker). `scheme` dient alleen om een re-render af te dwingen — de
+  // kleuren zelf staan in C, dat vóór setScheme wordt bijgewerkt.
+  const [scheme, setScheme] = useState(() => (prefersDark() ? "dark" : "light"));
+  useEffect(() => {
+    applyTheme(scheme);
+    if (typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = (e) => {
+      const mode = e.matches ? "dark" : "light";
+      applyTheme(mode);
+      setScheme(mode);
+    };
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   const [session,     setSession]     = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [entries,   setEntries]   = useState([]);
@@ -1066,6 +1272,8 @@ export default function App() {
   const [dailyCoachLoad, setDailyCoachLoad] = useState(false);
   const [runCoaching,    setRunCoaching]    = useState("");
   const [runCoachLoad,   setRunCoachLoad]   = useState(false);
+  const [nutriCoaching,  setNutriCoaching]  = useState("");
+  const [nutriLoad,      setNutriLoad]      = useState(false);
   const [dailyTip,       setDailyTip]       = useState("");
   const [dailyTipLoad,   setDailyTipLoad]   = useState(false);
   const [question,  setQuestion]  = useState("");
@@ -1293,6 +1501,27 @@ export default function App() {
       .finally(() => setRunCoachLoad(false));
   }, [tab, loading, entries.length]); // eslint-disable-line
 
+  // Auto-fetch voedingsanalyse als de coach tab opent.
+  // Cache-sleutel bevat de laatst ingevulde voedingsdag, zodat de analyse
+  // ververst zodra er nieuwe voedingsdata bij komt.
+  useEffect(() => {
+    if (tab !== "coach" || loading || !CLAUDE_KEY || entries.length === 0) return;
+    const logged = entries.filter(e =>
+      e.veg_fruit !== "" && e.veg_fruit != null ||
+      e.protein_ok != null && e.protein_ok !== "" ||
+      e.snacks !== "" && e.snacks != null);
+    if (logged.length < 3) return;   // te weinig om zinnig over te adviseren
+    const lastLogged = logged[logged.length - 1];
+    const cacheKey = `nutri_coaching_${lastLogged.date}_${logged.length}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) { setNutriCoaching(cached); return; }
+    setNutriLoad(true);
+    fetchNutritionCoaching(entries)
+      .then(r => { if (r) { setNutriCoaching(r); localStorage.setItem(cacheKey, r); } })
+      .catch(() => {})
+      .finally(() => setNutriLoad(false));
+  }, [tab, loading, entries.length]); // eslint-disable-line
+
   // Auto-fetch dagelijkse coaching als coach tab opent
   useEffect(() => {
     if (tab !== "coach" || loading || !CLAUDE_KEY || entries.length === 0) return;
@@ -1442,7 +1671,11 @@ export default function App() {
       )}
       <style>{`
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-        body { -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+        body {
+          -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+          background: ${C.bg}; color: ${C.text};
+        }
         input, select, textarea {
           background: ${C.fill} !important;
           border: none !important;
@@ -1457,13 +1690,33 @@ export default function App() {
           appearance: none;
         }
         input:focus, select:focus, textarea:focus { background: rgba(120,120,128,0.14) !important; }
+        /* Datumkiezer in de kop: geen veld-uiterlijk, alleen tekst */
+        input.plain-date {
+          background: transparent !important;
+          width: auto !important;
+          padding: 0 !important;
+          text-align: right;
+        }
+        /* Zichtbare toetsenbord-focus (HIG: alles moet zonder aanraking bedienbaar zijn) */
+        :focus-visible { outline: 2px solid ${C.blue}; outline-offset: 2px; border-radius: 8px; }
         @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes pulse  { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
         @keyframes spin   { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .fade { animation: fadeUp .25s cubic-bezier(.4,0,.2,1); }
-        .card { box-shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04); }
-        .card-lift { box-shadow: 0 4px 16px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.05); }
+        /* In donkere modus dragen schaduwen niets bij op zwart; daar doet het
+           oplichtende kaartvlak zelf het werk (zoals in iOS). */
+        .card { box-shadow: ${scheme === "dark" ? "none" : "0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.04)"}; }
+        .card-lift { box-shadow: ${scheme === "dark" ? "none" : "0 4px 16px rgba(0,0,0,0.09), 0 1px 4px rgba(0,0,0,0.05)"}; }
         ::-webkit-scrollbar { display: none; }
+        /* Respecteer "Verminder beweging" uit Toegankelijkheid */
+        @media (prefers-reduced-motion: reduce) {
+          *, *::before, *::after {
+            animation-duration: 0.001ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.001ms !important;
+            scroll-behavior: auto !important;
+          }
+        }
       `}</style>
 
       {/* ── VANDAAG ── */}
@@ -2015,7 +2268,7 @@ export default function App() {
 
       {/* ── COACH ── */}
       {tab === "coach" && (
-        <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "56px 16px 90px" }}>
+        <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "max(56px, calc(env(safe-area-inset-top) + 20px)) max(16px, env(safe-area-inset-right)) 90px max(16px, env(safe-area-inset-left))" }}>
           <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px", marginBottom: 4 }}>Coach</div>
           <div style={{ fontSize: 15, color: C.text3, marginBottom: 20 }}>
             {new Date().toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })}
@@ -2100,6 +2353,96 @@ export default function App() {
                           fetchRunCoaching(runs)
                             .then(r => { if (r) { setRunCoaching(r); localStorage.setItem(freshKey, r); } })
                             .catch(() => {}).finally(() => setRunCoachLoad(false));
+                        }} style={{ fontSize: 12, color: C.text3, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}>↻ vernieuw</button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            );
+          })()}
+
+          {/* Voedingsanalyse — verschijnt zodra er genoeg voedingsdata is */}
+          {(() => {
+            const logged = entries.filter(e =>
+              (e.veg_fruit !== "" && e.veg_fruit != null) ||
+              (e.protein_ok != null && e.protein_ok !== "") ||
+              (e.snacks !== "" && e.snacks != null));
+
+            if (logged.length < 3 && !nutriCoaching && !nutriLoad) {
+              // Nog niets te analyseren: leg uit wat er nodig is in plaats van
+              // een lege kaart te tonen.
+              return (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 10 }}>Voeding</div>
+                  <div style={{ background: C.card, borderRadius: 16, padding: "16px" }}>
+                    <div style={{ fontSize: 15, color: C.text2, lineHeight: 1.6 }}>
+                      Vul je voeding een paar dagen in bij de check-in — groente & fruit, eiwit,
+                      snacks en laat eten. Vanaf 3 ingevulde dagen krijg je hier een persoonlijke
+                      voedingsanalyse met je gewicht en training erbij.
+                    </div>
+                    <button onClick={() => setTab("checkin")} style={{
+                      marginTop: 14, width: "100%", background: C.green, color: "#FFF", border: "none",
+                      borderRadius: 12, padding: "13px", fontSize: 16, fontWeight: 600,
+                      cursor: "pointer", fontFamily: "inherit", minHeight: 44,
+                    }}>Naar check-in</button>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ fontSize: 17, fontWeight: 600 }}>Voeding</div>
+                  <div style={{ fontSize: 12, color: C.text3 }}>{logged.length} dagen ingevuld</div>
+                </div>
+                {nutriLoad && (
+                  <div style={{ textAlign: "center", padding: "20px 0", color: C.text3, fontSize: 14 }}>Voedingsanalyse laden...</div>
+                )}
+                {nutriCoaching && !nutriLoad && (() => {
+                  const icons = {
+                    "Wat de data laat zien": "🔎",
+                    "Verband met je training en herstel": "🔗",
+                    "Doe dit deze week": "⚡",
+                    "Rond je training": "🏃",
+                  };
+                  const colors = {
+                    "Wat de data laat zien": C.green,
+                    "Verband met je training en herstel": C.indigo,
+                    "Doe dit deze week": C.orange,
+                    "Rond je training": C.blue,
+                  };
+                  return (
+                    <div>
+                      {nutriCoaching.split(/###\s+/).filter(Boolean).map((s, i) => {
+                        const [title, ...rest] = s.trim().split("\n");
+                        const t = title.trim();
+                        return (
+                          <div key={i} style={{ background: C.card, borderRadius: 16, padding: "14px 16px", marginBottom: 8 }}>
+                            <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 8 }}>
+                              <span style={{ fontSize: 18 }}>{icons[t] || "•"}</span>
+                              <span style={{ fontSize: 14, fontWeight: 700, color: colors[t] || C.text }}>{t}</span>
+                            </div>
+                            <div style={{ fontSize: 15, color: C.text2, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{rest.join("\n").trim()}</div>
+                          </div>
+                        );
+                      })}
+                      <div style={{ textAlign: "right", marginTop: 4 }}>
+                        <button onClick={() => {
+                          Object.keys(localStorage)
+                            .filter(k => k.startsWith("nutri_coaching_"))
+                            .forEach(k => localStorage.removeItem(k));
+                          setNutriCoaching(""); setNutriLoad(true);
+                          fetchNutritionCoaching(entries)
+                            .then(r => {
+                              if (r) {
+                                setNutriCoaching(r);
+                                const last = logged[logged.length - 1];
+                                localStorage.setItem(`nutri_coaching_${last.date}_${logged.length}`, r);
+                              }
+                            })
+                            .catch(() => {}).finally(() => setNutriLoad(false));
                         }} style={{ fontSize: 12, color: C.text3, background: "none", border: "none", cursor: "pointer", padding: "4px 0" }}>↻ vernieuw</button>
                       </div>
                     </div>
@@ -2200,7 +2543,7 @@ export default function App() {
 
       {/* ── CHECK-IN ── */}
       {tab === "checkin" && (
-        <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "56px 16px 90px" }}>
+        <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "max(56px, calc(env(safe-area-inset-top) + 20px)) max(16px, env(safe-area-inset-right)) 90px max(16px, env(safe-area-inset-left))" }}>
           {/* Header met datum */}
           <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 20 }}>
             <div>
@@ -2209,7 +2552,7 @@ export default function App() {
                 {new Date(entry.date + "T12:00:00").toLocaleDateString("nl-NL", { weekday: "long", day: "numeric", month: "long" })}
               </div>
             </div>
-            <input type="date" value={entry.date} onChange={e => set("date", e.target.value)}
+            <input type="date" className="plain-date" value={entry.date} onChange={e => set("date", e.target.value)}
               style={{ fontSize: 13, color: C.text3, background: "none", border: "none", padding: 0, cursor: "pointer", outline: "none", textAlign: "right" }} />
           </div>
 
@@ -2220,6 +2563,28 @@ export default function App() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
             <Stepper label="Alcohol" value={entry.alcohol || 0} onChange={v => set("alcohol", v)} step={1} min={0} max={20} unit="gl" />
             <Stepper label="Koffie" value={entry.koffie || 0} onChange={v => set("koffie", v)} step={1} min={0} max={15} unit="kp" />
+          </div>
+
+          {/* Voeding */}
+          <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.green, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.05em" }}>Voeding</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Stepper label="Groente & fruit" value={entry.veg_fruit || 0} onChange={v => set("veg_fruit", v)} step={1} min={0} max={15} unit="prt" />
+              <Stepper label="Snacks" value={entry.snacks || 0} onChange={v => set("snacks", v)} step={1} min={0} max={15} unit="×" />
+            </div>
+            <ToggleRow label="Eiwit bij elke maaltijd"
+              hint="Ontbijt, lunch en diner met een eiwitbron"
+              checked={isTrue(entry.protein_ok)} onChange={v => set("protein_ok", v)} />
+            <ToggleRow label="Laat gegeten"
+              hint="Hoofdmaaltijd binnen 2 uur voor bed"
+              checked={isTrue(entry.late_meal)} onChange={v => set("late_meal", v)} />
+          </div>
+
+          {/* Meditatie */}
+          <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.indigo, marginBottom: 14, textTransform: "uppercase", letterSpacing: "0.05em" }}>Meditatie</div>
+            <Stepper label={`Mediteren — doel ${MEDITATION_GOAL} min`} value={entry.meditation_min || 0}
+              onChange={v => set("meditation_min", v)} step={5} min={0} max={120} unit="min" />
           </div>
 
           {/* Bloeddruk */}
@@ -2370,6 +2735,78 @@ export default function App() {
           }
         }
 
+        // 8. Meditatie — consistentie telt zwaarder dan lengte
+        if (entries.some(e => parseNum(e.meditation_min) > 0)) {
+          const medDays = last7.filter(e => parseNum(e.meditation_min) >= MEDITATION_GOAL).length;
+          const medMin7 = last7.map(e => parseNum(e.meditation_min) || 0).reduce((a, b) => a + b, 0);
+          let streak = 0;
+          for (let i = entries.length - 1; i >= 0; i--) {
+            if (parseNum(entries[i].meditation_min) >= MEDITATION_GOAL) streak++;
+            else break;
+          }
+          insights.push({ icon: "🧘", color: medDays >= 5 ? C.green : medDays >= 3 ? C.orange : C.text3,
+            title: streak >= 2 ? `${streak} dagen op rij gemediteerd` : `${medDays} van 7 dagen gemediteerd`,
+            body: `${Math.round(medMin7)} min deze week · doel ${MEDITATION_GOAL} min per dag.` });
+        }
+
+        // 9. Voeding — groente & fruit en eiwit
+        const vegVals = last7.map(e => parseNum(e.veg_fruit)).filter(v => !isNaN(v));
+        if (vegVals.length >= 3) {
+          const vegAvg = vegVals.reduce((a, b) => a + b, 0) / vegVals.length;
+          const proteinDays = last7.filter(e => isTrue(e.protein_ok)).length;
+          insights.push({ icon: "🥗", color: vegAvg >= VEG_GOAL ? C.green : vegAvg >= VEG_GOAL * 0.6 ? C.orange : C.red,
+            title: `Gemiddeld ${vegAvg.toFixed(1)} porties groente & fruit`,
+            body: `Doel ${VEG_GOAL} per dag · eiwit bij elke maaltijd op ${proteinDays} van 7 dagen.` });
+        }
+
+        // 10. Laat eten vs slaapkwaliteit — alleen melden als het verband er echt is
+        const lateRows = entries.filter(e =>
+          e.late_meal != null && e.late_meal !== "" && parseNum(e.sleep_q) > 0);
+        if (lateRows.length >= 6) {
+          const withLate = lateRows.filter(e => isTrue(e.late_meal)).map(e => parseNum(e.sleep_q));
+          const noLate   = lateRows.filter(e => !isTrue(e.late_meal)).map(e => parseNum(e.sleep_q));
+          if (withLate.length >= 2 && noLate.length >= 2) {
+            const ya = withLate.reduce((a, b) => a + b, 0) / withLate.length;
+            const na = noLate.reduce((a, b) => a + b, 0) / noLate.length;
+            if (na - ya > 3) insights.push({ icon: "🌙", color: C.indigo,
+              title: "Laat eten kost je slaapkwaliteit",
+              body: `Slaapscore ${na.toFixed(0)} zonder late maaltijd vs ${ya.toFixed(0)} met (${lateRows.length} nachten).` });
+          }
+        }
+
+        // 11. Hardloop — tempo t.o.v. het doeltempo voor 10 km in 45 min
+        const paceSec = (p) => {
+          const parts = String(p).split(":").map(Number);
+          return parts.length === 2 && parts.every(v => !isNaN(v)) ? parts[0] * 60 + parts[1] : NaN;
+        };
+        const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+        const runRows = entries.filter(e =>
+          (e.train_type || "").toLowerCase().includes("run") &&
+          parseNum(e.train_dist) >= 2 && !isNaN(paceSec(e.avg_pace)));
+        if (runRows.length >= 3) {
+          const recentRuns = runRows.slice(-5);
+          const avgPace = recentRuns.map(r => paceSec(r.avg_pace)).reduce((a, b) => a + b, 0) / recentRuns.length;
+          const goalSec = paceSec(PRIMARY_RACE.goalPace);
+          const diff = avgPace - goalSec;
+          insights.push({ icon: "🏃", color: diff <= 0 ? C.green : diff < 45 ? C.orange : C.text3,
+            title: diff <= 0 ? "Op doeltempo" : `${mmss(diff)}/km boven doeltempo`,
+            body: `Gemiddeld ${mmss(avgPace)}/km over je laatste ${recentRuns.length} runs · doel ${PRIMARY_RACE.goalPace}/km voor 10 km in ${PRIMARY_RACE.goalTime}.` });
+
+          // Weekvolume — bepalend voor of het doel realistisch is
+          const kmThisWeek = last7.filter(e => (e.train_type || "").toLowerCase().includes("run"))
+            .map(e => parseNum(e.train_dist) || 0).reduce((a, b) => a + b, 0);
+          const kmPrevWeek = prev7.filter(e => (e.train_type || "").toLowerCase().includes("run"))
+            .map(e => parseNum(e.train_dist) || 0).reduce((a, b) => a + b, 0);
+          if (kmThisWeek > 0) {
+            const d = kmThisWeek - kmPrevWeek;
+            insights.push({ icon: "📏", color: kmThisWeek >= 15 ? C.green : kmThisWeek >= 8 ? C.orange : C.text3,
+              title: `${kmThisWeek.toFixed(1)} km hardgelopen deze week`,
+              body: kmPrevWeek > 0
+                ? `${d > 0 ? "+" : ""}${d.toFixed(1)} km vs vorige week (${kmPrevWeek.toFixed(1)} km).`
+                : `Eerste week met loopvolume in de data.` });
+          }
+        }
+
         // Week-over-week tiles
         const wkTiles = [
           { l: "HRV",      f: "hrv",          u: "ms", c: C.green,  good:"up"   },
@@ -2385,7 +2822,7 @@ export default function App() {
         });
 
         return (
-          <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "56px 16px 90px" }}>
+          <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "max(56px, calc(env(safe-area-inset-top) + 20px)) max(16px, env(safe-area-inset-right)) 90px max(16px, env(safe-area-inset-left))" }}>
             <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px", marginBottom: 2 }}>Trends</div>
             <div style={{ fontSize: 14, color: C.text3, marginBottom: 20 }}>
               {n} dagen data · {n>0?fmt(entries[0].date):""}{n>1?" t/m "+fmt(entries[n-1].date):""}
@@ -2437,21 +2874,25 @@ export default function App() {
 
                 {/* Ontwikkeling — meerdere metingen geïndexeerd op één as */}
                 {(() => {
-                  const WINDOW_DAYS = 90;
+                  const MAX_WINDOW_DAYS = 90;
                   const todayStr = today();
-                  const endD   = new Date(todayStr + "T12:00:00");
-                  const startD = new Date(endD); startD.setDate(endD.getDate() - (WINDOW_DAYS - 1));
+                  const endD = new Date(todayStr + "T12:00:00");
                   const ds = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
-                  const startStr = ds(startD);
-                  const span   = WINDOW_DAYS - 1;
+                  const earliest = new Date(endD); earliest.setDate(endD.getDate() - (MAX_WINDOW_DAYS - 1));
+                  const inWin = entries.filter(e => e.date >= ds(earliest) && e.date <= todayStr);
+                  if (inWin.length < 2) return null;
+                  // Begin bij de eerste dag mét data in plaats van altijd 90 dagen
+                  // terug, zodat de grafiek de volledige breedte vult zolang er
+                  // nog geen 90 dagen historie is.
+                  const startD = new Date(inWin[0].date + "T12:00:00");
+                  const span   = Math.max(1, Math.round((endD - startD) / 86400000));
                   const dayIdx = dateStr => Math.round((new Date(dateStr + "T12:00:00") - startD) / 86400000);
-                  const inWin  = entries.filter(e => e.date >= startStr && e.date <= todayStr);
 
                   const METRICS = [
-                    { field: "weight", label: "Gewicht",      color: C.blue,   dec: 1, lowerBetter: true,  min: 40 },
-                    { field: "hrv_7d", label: "HRV",          color: C.green,  dec: 0, lowerBetter: false, min: 1  },
-                    { field: "rhr",    label: "Rusthartslag", color: C.orange, dec: 0, lowerBetter: true,  min: 20 },
-                    { field: "vo2max", label: "VO2max",       color: C.purple, dec: 1, lowerBetter: false, min: 30 },
+                    { field: "weight", label: "Gewicht",      color: C.chart.s1, dec: 1, lowerBetter: true,  min: 40 },
+                    { field: "hrv_7d", label: "HRV",          color: C.chart.s2, dec: 0, lowerBetter: false, min: 1  },
+                    { field: "vo2max", label: "VO2max",       color: C.chart.s3, dec: 1, lowerBetter: false, min: 30 },
+                    { field: "rhr",    label: "Rusthartslag", color: C.chart.s4, dec: 0, lowerBetter: true,  min: 20 },
                   ];
 
                   const series = METRICS.map(m => {
@@ -2470,7 +2911,7 @@ export default function App() {
                     <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 2 }}>
                         <div style={{ fontSize: 15, fontWeight: 600 }}>Ontwikkeling</div>
-                        <div style={{ fontSize: 11, color: C.text3 }}>100 = start · {WINDOW_DAYS} dagen</div>
+                        <div style={{ fontSize: 11, color: C.text3 }}>100 = start · {span + 1} dagen</div>
                       </div>
                       <div style={{ fontSize: 12, color: C.text3, marginBottom: 12 }}>
                         Relatieve verandering t.o.v. de eerste meting — gewicht &amp; rusthartslag omlaag is goed, HRV &amp; VO2max omhoog.
@@ -2557,6 +2998,62 @@ export default function App() {
                     <Sparkline data={wVals} color={C.text3} height={44} fill />
                   </div>
                 )}
+
+                {/* Gewoontes — meditatie & voeding */}
+                {(() => {
+                  const last28 = entries.slice(-28);
+                  const hasMed = entries.some(e => parseNum(e.meditation_min) > 0);
+                  const vegSeries = last28.map(e => parseNum(e.veg_fruit)).filter(v => !isNaN(v));
+                  const hasVeg = vegSeries.length >= 2;
+                  if (!hasMed && !hasVeg) return null;
+
+                  const medDone28 = last28.filter(e => parseNum(e.meditation_min) >= MEDITATION_GOAL).length;
+                  return (
+                    <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Gewoontes</div>
+
+                      {hasMed && (
+                        <div style={{ marginBottom: hasVeg ? 18 : 0 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                            <div style={{ fontSize: 13, color: C.text3 }}>Meditatie · {MEDITATION_GOAL} min per dag</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: C.indigo }}>{medDone28}/28 dagen</div>
+                          </div>
+                          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                            {last28.map(e => {
+                              const m = parseNum(e.meditation_min);
+                              const full = !isNaN(m) && m >= MEDITATION_GOAL;
+                              const some = !isNaN(m) && m > 0 && !full;
+                              return (
+                                <div key={e.date}
+                                  title={`${fmt(e.date)}: ${!isNaN(m) && m > 0 ? Math.round(m) + " min" : "niet gemediteerd"}`}
+                                  style={{
+                                    width: 22, height: 22, borderRadius: 5, display: "flex",
+                                    alignItems: "center", justifyContent: "center",
+                                    background: full ? C.indigo + "22" : some ? C.indigo + "12" : C.fill,
+                                  }}>
+                                  {full && <div style={{ width: 8, height: 8, borderRadius: 4, background: C.indigo }} />}
+                                  {some && <div style={{ width: 5, height: 5, borderRadius: 3, background: C.indigo, opacity: 0.7 }} />}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {hasVeg && (
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                            <div style={{ fontSize: 13, color: C.text3 }}>Groente &amp; fruit · doel {VEG_GOAL} porties</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: C.green }}>
+                              gem. {(vegSeries.reduce((a, b) => a + b, 0) / vegSeries.length).toFixed(1)}
+                            </div>
+                          </div>
+                          <Sparkline data={vegSeries} color={C.green} height={44} fill refLine={VEG_GOAL} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Trainingsoverzicht */}
                 <div style={{ background: C.card, borderRadius: 16, padding: 16, marginBottom: 10 }}>
@@ -2721,7 +3218,7 @@ export default function App() {
                           );
                         })}
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: C.bg, borderRadius: 12, marginBottom: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: C.inset, borderRadius: 12, marginBottom: 8 }}>
                         <div>
                           <div style={{ fontSize: 11, color: C.text3, marginBottom: 3 }}>Totaal dit jaar — sinds 1 jan</div>
                           <div style={{ fontSize: 26, fontWeight: 700 }}>
@@ -2746,7 +3243,7 @@ export default function App() {
                           <div style={{ fontSize: 11, color: C.text3 }}>geen {lastYear}</div>
                         )}
                       </div>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: C.bg, borderRadius: 12, marginBottom: 16 }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: C.inset, borderRadius: 12, marginBottom: 16 }}>
                         <div>
                           <div style={{ fontSize: 11, color: C.text3, marginBottom: 3 }}>Gem. per week — sinds 1 jan</div>
                           <div style={{ fontSize: 22, fontWeight: 700 }}>
@@ -2790,7 +3287,7 @@ export default function App() {
 
       {/* ── MEER / SETUP ── */}
       {tab === "setup" && (
-        <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "56px 16px 90px" }}>
+        <div className="fade" style={{ maxWidth: 640, margin: "0 auto", padding: "max(56px, calc(env(safe-area-inset-top) + 20px)) max(16px, env(safe-area-inset-right)) 90px max(16px, env(safe-area-inset-left))" }}>
           <div style={{ fontSize: 28, fontWeight: 700, letterSpacing: "-0.5px", marginBottom: 20 }}>Meer</div>
 
           {/* Logboek */}
