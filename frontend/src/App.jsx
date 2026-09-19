@@ -133,6 +133,28 @@ const parseNum  = (v) => { if (v === "" || v == null) return NaN; return parseFl
 const numArr    = (entries, f) => entries.map(e => parseNum(e[f])).filter(v => !isNaN(v) && v > 0);
 const avg       = (arr) => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(1) : "—";
 const daysUntil = (d) => Math.ceil((new Date(d) - new Date()) / 86400000);
+// Vertaalt een Supabase-fout naar een bruikbare melding. PostgREST meldt een
+// onbekende kolom als PGRST204; dat betekent in de praktijk dat een
+// database-migratie nog niet is uitgevoerd.
+function describeSaveError(e) {
+  const msg  = e?.message || e?.error_description || String(e || "Onbekende fout");
+  const code = e?.code || "";
+  const missingCol = code === "PGRST204" ||
+    /could not find the .* column|column .* does not exist/i.test(msg);
+  if (missingCol) {
+    const col = (msg.match(/'([a-z_]+)'/) || msg.match(/column "?([a-z_]+)"?/i) || [])[1];
+    return `De database kent ${col ? `de kolom "${col}"` : "een kolom"} nog niet. ` +
+           `Voer supabase/migration_2026_09_voeding_meditatie.sql uit in de Supabase SQL Editor.`;
+  }
+  if (/jwt|token|401|not authenticated/i.test(msg)) {
+    return "Je sessie is verlopen. Log opnieuw in en probeer het nog een keer.";
+  }
+  if (/failed to fetch|networkerror/i.test(msg)) {
+    return "Geen verbinding met de server. Controleer je internetverbinding.";
+  }
+  return msg;
+}
+
 const isTrue    = (v) => v === true || v === "true" || v === "TRUE" || v === 1 || v === "1";
 const EMPTY     = HEADERS.reduce((o, h) => ({ ...o, [h]: "" }), { trained: false, mental_unrest: false, breathing: false });
 
@@ -667,6 +689,7 @@ const PALETTES = {
     text3:   "#8E8E93",
     border:  "rgba(60,60,67,0.12)",
     fill:    "rgba(120,120,128,0.08)",
+    navBg:   "rgba(255,255,255,0.92)",
     chart:   { s1: "#007AFF", s2: "#248A3D", s3: "#AF52DE", s4: "#B76A00" },
   },
   dark: {
@@ -686,6 +709,7 @@ const PALETTES = {
     text3:   "#98989F",
     border:  "rgba(84,84,88,0.65)",
     fill:    "rgba(120,120,128,0.24)",
+    navBg:   "rgba(28,28,30,0.92)",
     chart:   { s1: "#0A84FF", s2: "#1E8A3E", s3: "#BF5AF2", s4: "#D27700" },
   },
 };
@@ -1278,6 +1302,8 @@ export default function App() {
   const [dailyTipLoad,   setDailyTipLoad]   = useState(false);
   const [question,  setQuestion]  = useState("");
   const [saveMsg,   setSaveMsg]   = useState("");
+  const [saveErr,   setSaveErr]   = useState("");
+  const saveErrRef = useRef(null);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [ghSyncing,   setGhSyncing]   = useState(false);
   const [planDone,    setPlanDone]    = useState({});
@@ -1375,9 +1401,17 @@ export default function App() {
     }
   }, [entry.date, entries]);
 
+  useEffect(() => {
+    if (!saveErr || !saveErrRef.current) return;
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    saveErrRef.current.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+  }, [saveErr]);
+
   const saveEntry = async () => {
     setSyncing(true);
+    setSaveErr("");
     const savedEntry = { ...entry };
+    let failed = false;
     try {
       const { error } = await supabase.from("health_entries").upsert(
         cleanForDB({ ...entry, user_id: session.user.id }),
@@ -1388,11 +1422,16 @@ export default function App() {
       await loadData();
       setEntry(savedEntry);
       setSaveMsg("Opgeslagen!");
-    } catch {
+    } catch (e) {
+      failed = true;
       setSaveMsg("Fout bij opslaan");
+      setSaveErr(describeSaveError(e));
+      console.error("Opslaan mislukt:", e);
     }
     setSyncing(false);
-    setTimeout(() => setSaveMsg(""), 2500);
+    // Een foutmelding laten staan tot de volgende poging — anders is hij weg
+    // voor je hem gelezen hebt.
+    if (!failed) setTimeout(() => setSaveMsg(""), 2500);
   };
 
   const autoSaveField = async (key, value, targetDate) => {
@@ -2626,6 +2665,19 @@ export default function App() {
           }}>
             {syncing ? "Opslaan..." : saveMsg || "Opslaan"}
           </button>
+
+          {/* Waaróm het misging — anders sta je naar een rode knop te kijken */}
+          {saveErr && (
+            <div role="alert" ref={saveErrRef} style={{
+              marginTop: 10, padding: "12px 14px", borderRadius: 12,
+              background: C.red + "18", border: `1px solid ${C.red}55`,
+              fontSize: 14, color: C.text2, lineHeight: 1.5,
+              // Bestandsnamen en kolomnamen zijn lange ononderbroken woorden
+              overflowWrap: "anywhere",
+            }}>
+              {saveErr}
+            </div>
+          )}
         </div>
       )}
 
@@ -3354,7 +3406,7 @@ export default function App() {
       {/* ── Bottom nav ── */}
       <div style={{
         position: "fixed", bottom: 0, left: 0, right: 0,
-        background: "rgba(255,255,255,0.92)", backdropFilter: "blur(20px)",
+        background: C.navBg, backdropFilter: "blur(20px)", WebkitBackdropFilter: "blur(20px)",
         borderTop: `1px solid ${C.border}`,
         padding: "8px 0 max(8px, env(safe-area-inset-bottom))",
         display: "flex", justifyContent: "space-around"
