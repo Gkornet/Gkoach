@@ -53,6 +53,18 @@ def sync_window():
     n   = max(1, SYNC_LOOKBACK_DAYS)
     return [(end - datetime.timedelta(days=i)).isoformat() for i in range(n - 1, -1, -1)]
 
+def _num(value, default=None):
+    """Garmin levert bestaande velden regelmatig als null. dict.get(k, 0) vangt
+    dat niet af (de default geldt alleen bij een ontbrekende sleutel), dus elke
+    berekening erop klapte het hele blok om. Deze helper doet dat wel."""
+    if value is None or value == "":
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 # ── Garmin inloggen ───────────────────────────────────────────────────────────
 def login_garmin():
     """Logt één keer in en geeft een herbruikbare client terug."""
@@ -69,12 +81,30 @@ def login_garmin():
         try:
             client = Garmin(GARMIN_EMAIL, GARMIN_PASSWORD)
             client.login(tokenstore=token_dir)
-            # Test of de sessie nog geldig is
-            client.connectapi(f"/usersummary-service/usersummary/daily/{client.display_name}", params={"calendarDate": TODAY})
-            print("  ✓ Ingelogd via opgeslagen tokens")
-            loaded = True
-        except Exception:
-            print("  → Tokens verlopen, opnieuw inloggen...")
+            # De dag-endpoints bouwen hun URL met display_name. Ontbreekt die,
+            # dan geeft Garmin een lege 200 in plaats van een fout en lijkt de
+            # sync te slagen terwijl er niets binnenkomt. Dus: controleer of de
+            # proef-aanroep ook echt inhoud teruggeeft.
+            if not getattr(client, "display_name", None):
+                print("  ⚠ display_name ontbreekt na token-login — profiel opnieuw ophalen...")
+                try:
+                    profile = client.get_user_profile() or {}
+                    client.display_name = (profile.get("displayName")
+                                           or profile.get("userName") or client.display_name)
+                except Exception as e:
+                    print(f"  ⚠ Profiel ophalen mislukt: {e}")
+
+            probe = client.connectapi(
+                f"/usersummary-service/usersummary/daily/{client.display_name}",
+                params={"calendarDate": TODAY}) or {}
+            if client.display_name and probe:
+                print(f"  ✓ Ingelogd via opgeslagen tokens (profiel: {client.display_name})")
+                loaded = True
+            else:
+                print(f"  ⚠ Sessie geeft lege antwoorden "
+                      f"(display_name={client.display_name!r}) — opnieuw inloggen...")
+        except Exception as e:
+            print(f"  → Tokens niet bruikbaar ({e}) — opnieuw inloggen...")
 
     if not loaded:
         os.makedirs(token_dir, exist_ok=True)
@@ -95,13 +125,22 @@ def fetch_day(client, day):
 
     # Slaap
     try:
-        sleep = client.get_sleep_data(day)
-        daily = sleep.get("dailySleepDTO", {})
-        data["sleep_h"]    = round(daily.get("sleepTimeSeconds", 0) / 3600, 2)
-        data["sleep_q"]    = daily.get("sleepScores", {}).get("overall", {}).get("value", "")
-        data["sleep_deep"] = round(daily.get("deepSleepSeconds", 0) / 3600, 2)
-        data["sleep_rem"]  = round(daily.get("remSleepSeconds", 0) / 3600, 2)
-        print(f"  ✓ Slaap: {data['sleep_h']}u, score {data['sleep_q']}")
+        sleep = client.get_sleep_data(day) or {}
+        daily = sleep.get("dailySleepDTO") or {}
+        total = _num(daily.get("sleepTimeSeconds"))
+        deep  = _num(daily.get("deepSleepSeconds"))
+        rem   = _num(daily.get("remSleepSeconds"))
+        if total:
+            data["sleep_h"] = round(total / 3600, 2)
+        if deep is not None:
+            data["sleep_deep"] = round(deep / 3600, 2)
+        if rem is not None:
+            data["sleep_rem"] = round(rem / 3600, 2)
+        data["sleep_q"] = ((daily.get("sleepScores") or {}).get("overall") or {}).get("value") or ""
+        if total:
+            print(f"  ✓ Slaap: {data['sleep_h']}u, score {data['sleep_q']}")
+        else:
+            print("  → Slaap: geen data voor deze dag")
     except Exception as e:
         print(f"  ✗ Slaap: {e}")
 
@@ -132,8 +171,13 @@ def fetch_day(client, day):
     # Stappen + activiteiten
     try:
         steps = client.get_steps_data(day)
-        data["steps"] = sum(s.get("steps", 0) for s in steps) if isinstance(steps, list) else ""
-        print(f"  ✓ Stappen: {data['steps']}")
+        # Een lege lijst betekent "geen antwoord", niet "nul stappen". Een echte
+        # nul-dag levert wel intervallen op (met 0 erin), dus die blijft kloppen.
+        if isinstance(steps, list) and steps:
+            data["steps"] = int(sum(_num(x.get("steps"), 0) for x in steps))
+            print(f"  ✓ Stappen: {data['steps']}")
+        else:
+            print("  → Stappen: geen data voor deze dag")
     except Exception as e:
         print(f"  ✗ Stappen: {e}")
 
@@ -232,6 +276,16 @@ def fetch_day(client, day):
     # synchroniseerden alsnog op de juiste dag terechtkomen.
 
     return data
+
+
+# Velden die bewijzen dat Garmin voor deze dag echt iets teruggaf. Zonder deze
+# controle schrijft een stukke sessie steps=0 en trained=False over goede data.
+EVIDENCE_FIELDS = ("sleep_h", "sleep_q", "hrv", "hrv_7d", "rhr", "stress",
+                   "body_battery", "steps", "vo2max", "activities", "train_type")
+
+
+def has_real_data(data):
+    return any(data.get(f) not in ("", None) for f in EVIDENCE_FIELDS)
 
 
 # ── Supabase schrijven ────────────────────────────────────────────────────────
@@ -412,19 +466,19 @@ if __name__ == "__main__":
             data = {}
 
         try:
-            # Ook zonder Garmin-data de rij voor vandaag aanmaken, zodat de app
-            # altijd een rij heeft om handmatige invoer aan te hangen.
-            if not data and day != TODAY:
-                print(f"  → {day}: overgeslagen (geen data)")
-                failed_days.append(day)
-                continue
-            if not data and day == TODAY:
-                existing = sb.table("health_entries").select("id") \
-                    .eq("user_id", GARMIN_USER_ID).eq("date", day).execute()
-                if not existing.data:
-                    sb.table("health_entries").insert(
-                        {"user_id": GARMIN_USER_ID, "date": day}).execute()
-                    print(f"  ✓ {day}: lege rij aangemaakt")
+            # Alleen schrijven als Garmin echt iets teruggaf. Anders zouden
+            # steps=0 en trained=False over goede data heen gaan.
+            if not has_real_data(data):
+                if day == TODAY:
+                    # Rij voor vandaag toch aanmaken, zodat de app iets heeft om
+                    # handmatige invoer aan te hangen.
+                    existing = sb.table("health_entries").select("id") \
+                        .eq("user_id", GARMIN_USER_ID).eq("date", day).execute()
+                    if not existing.data:
+                        sb.table("health_entries").insert(
+                            {"user_id": GARMIN_USER_ID, "date": day}).execute()
+                        print(f"  ✓ {day}: lege rij aangemaakt")
+                print(f"  → {day}: geen Garmin-data, bestaande rij niet aangeraakt")
                 failed_days.append(day)
                 continue
             write_to_supabase(data, day, sb=sb)
@@ -455,7 +509,11 @@ if __name__ == "__main__":
     elif ok_days:
         print(f"⚠ Sync deels voltooid — ok: {', '.join(ok_days)} | zonder data: {', '.join(failed_days)}")
     else:
-        print(f"❌ Sync zonder resultaat — geen enkele dag geschreven")
-        # Alleen falen als er echt niets is gelukt én Garmin onbereikbaar was
-        if client is None:
-            sys.exit(1)
+        # Geen enkele dag leverde data op. Dat is een kapotte sync, geen
+        # geslaagde run: laat de job rood worden zodat het opvalt in plaats van
+        # stilletjes door te blijven "slagen".
+        print("❌ Geen enkele dag leverde Garmin-data op.")
+        print("   De dag-endpoints (slaap, HRV, stats, stappen, activiteiten) gaven")
+        print("   lege antwoorden. Meestal is de Garmin-sessie verlopen: ververs de")
+        print("   GARMIN_TOKENS secret (zie backend/refresh_garmin_token.py).")
+        sys.exit(1)
