@@ -85,24 +85,19 @@ def login_garmin():
             # dan geeft Garmin een lege 200 in plaats van een fout en lijkt de
             # sync te slagen terwijl er niets binnenkomt. Dus: controleer of de
             # proef-aanroep ook echt inhoud teruggeeft.
+            # Sessie toetsen op iets dat losstaat van het horloge: is het
+            # profiel bereikbaar? Toetsen op "komt er dagdata terug" zou fout
+            # zijn — als het horloge stuk is of niet gedragen wordt, is die
+            # data terecht leeg en zouden we elk uur opnieuw gaan inloggen.
             if not getattr(client, "display_name", None):
-                print("  ⚠ display_name ontbreekt na token-login — profiel opnieuw ophalen...")
-                try:
-                    profile = client.get_user_profile() or {}
-                    client.display_name = (profile.get("displayName")
-                                           or profile.get("userName") or client.display_name)
-                except Exception as e:
-                    print(f"  ⚠ Profiel ophalen mislukt: {e}")
-
-            probe = client.connectapi(
-                f"/usersummary-service/usersummary/daily/{client.display_name}",
-                params={"calendarDate": TODAY}) or {}
-            if client.display_name and probe:
+                profile = client.get_user_profile() or {}
+                client.display_name = (profile.get("displayName")
+                                       or profile.get("userName") or client.display_name)
+            if client.display_name:
                 print(f"  ✓ Ingelogd via opgeslagen tokens (profiel: {client.display_name})")
                 loaded = True
             else:
-                print(f"  ⚠ Sessie geeft lege antwoorden "
-                      f"(display_name={client.display_name!r}) — opnieuw inloggen...")
+                print("  ⚠ Profiel niet op te halen — opnieuw inloggen...")
         except Exception as e:
             print(f"  → Tokens niet bruikbaar ({e}) — opnieuw inloggen...")
 
@@ -508,12 +503,14 @@ if __name__ == "__main__":
         print(f"✅ Sync voltooid — {len(ok_days)} dag(en): {', '.join(ok_days)}")
     elif ok_days:
         print(f"⚠ Sync deels voltooid — ok: {', '.join(ok_days)} | zonder data: {', '.join(failed_days)}")
-    else:
-        # Geen enkele dag leverde data op. Dat is een kapotte sync, geen
-        # geslaagde run: laat de job rood worden zodat het opvalt in plaats van
-        # stilletjes door te blijven "slagen".
-        print("❌ Geen enkele dag leverde Garmin-data op.")
-        print("   De dag-endpoints (slaap, HRV, stats, stappen, activiteiten) gaven")
-        print("   lege antwoorden. Meestal is de Garmin-sessie verlopen: ververs de")
-        print("   GARMIN_TOKENS secret (zie backend/refresh_garmin_token.py).")
+    elif client is None:
+        # Echt kapot: we kwamen niet eens binnen bij Garmin.
+        print("❌ Geen verbinding met Garmin — er is niets opgehaald.")
+        print("   Ververs zo nodig de GARMIN_TOKENS secret (backend/refresh_garmin_token.py).")
         sys.exit(1)
+    else:
+        # Ingelogd, maar geen dagdata. Dat is normaal als het horloge niet
+        # gedragen of weggebracht wordt — geen reden om de run te laten falen.
+        print("ℹ Geen dagdata van het horloge voor deze dagen.")
+        print("  Bestaande rijen zijn niet aangeraakt. Gewicht en geplande")
+        print("  workouts lopen los van het horloge en zijn wel bijgewerkt.")
