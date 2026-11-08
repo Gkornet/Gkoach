@@ -24,7 +24,7 @@ jobs:
       - name: Python instellen
         uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.12'  # garminconnect >=0.3.3 vereist Python 3.12
           cache: 'pip'
 
       - name: Dependencies installeren
