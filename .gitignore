@@ -3,3 +3,4 @@ __pycache__/
 .env
 backend/.garmin_tokens/
 backend/service_account.json
+.venv/
